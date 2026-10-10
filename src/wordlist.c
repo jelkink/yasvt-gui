@@ -30,10 +30,12 @@ static char *language_name(const char *text)
     return lower;
 }
 
-gboolean wordlist_load_file(WordList *list, const char *path, GError **error)
+gboolean wordlist_load_file(WordList *list, const char *path, int start, int number,
+                            GError **error)
 {
     char *contents = NULL;
     gsize length = 0;
+    gint64 data_row = 0;
 
     if (!g_file_get_contents(path, &contents, &length, error))
         return FALSE;
@@ -74,6 +76,10 @@ gboolean wordlist_load_file(WordList *list, const char *path, GError **error)
                 g_free(third);
             }
         } else {
+            data_row++;
+            if (data_row < start || (number > 0 && data_row >= (gint64)start + number))
+                continue;
+
             const char *extra = columns > 2 ? row[2] : NULL;
             Word *word = word_new(source_language, target_language, row[0], row[1],
                                   third_is_pinyin ? NULL : extra);

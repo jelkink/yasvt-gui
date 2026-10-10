@@ -3,6 +3,9 @@
 #include "gui.h"
 #include "wordlist.h"
 
+static int range_start = 1;
+static int range_number = -1;
+
 typedef struct {
     GtkWindow *window;
     GtkWidget *prompt_label;
@@ -88,7 +91,7 @@ static void load_paths(App *app, const char *const *paths, guint count)
 {
     for (guint i = 0; i < count; i++) {
         GError *error = NULL;
-        if (!wordlist_load_file(app->list, paths[i], &error)) {
+        if (!wordlist_load_file(app->list, paths[i], range_start, range_number, &error)) {
             gtk_label_set_text(GTK_LABEL(app->feedback_label), error->message);
             g_error_free(error);
             return;
@@ -329,9 +332,31 @@ static void on_open(GApplication *gtk_app, GFile **files, gint n_files, const ch
     g_strfreev(paths);
 }
 
+static gint on_local_options(GApplication *gtk_app, GVariantDict *options, gpointer user_data)
+{
+    (void)gtk_app;
+    (void)user_data;
+    g_variant_dict_lookup(options, "start", "i", &range_start);
+    g_variant_dict_lookup(options, "number", "i", &range_number);
+
+    if (range_start < 1) {
+        g_printerr("--start must be at least 1\n");
+        return 1;
+    }
+    return -1;
+}
+
 int gui_run(int argc, char **argv)
 {
     GtkApplication *app = gtk_application_new("org.yasvt.gui", G_APPLICATION_HANDLES_OPEN);
+
+    const GOptionEntry entries[] = {
+        {"start", 's', 0, G_OPTION_ARG_INT, NULL, "First word to use, counted from 1 (default 1)", "N"},
+        {"number", 'n', 0, G_OPTION_ARG_INT, NULL, "Number of words to use (default: all)", "N"},
+        {NULL, 0, 0, 0, NULL, NULL, NULL},
+    };
+    g_application_add_main_option_entries(G_APPLICATION(app), entries);
+    g_signal_connect(app, "handle-local-options", G_CALLBACK(on_local_options), NULL);
     g_signal_connect(app, "activate", G_CALLBACK(on_activate), NULL);
     g_signal_connect(app, "open", G_CALLBACK(on_open), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
