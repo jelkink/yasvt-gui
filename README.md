@@ -12,7 +12,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
   - **Type the word**: see the target word, type it out.
   - **Hear and translate**: hear the source word, type the translation.
   - **Hear and type**: hear the target word, type it out.
-- Spoken words (English, Russian, Chinese, Cantonese, Italian, Arabic, Dutch, Latin, Indonesian, French, German, Spanish, Portuguese, Japanese, Korean, Turkish, Polish, Hindi, Greek, Swedish) via Google TTS, cached locally.
+- Spoken words (English, Russian, Chinese, Cantonese, Italian, Arabic, Dutch, Latin, Indonesian, French, German, Spanish, Portuguese, Japanese, Korean, Turkish, Polish, Hindi, Greek, Swedish) via Google TTS, cached locally. The word is read out after every answer, except for your native languages (default English and Dutch), which you can change under **Settings**; they are stored in `~/.config/yasvt-gui/settings.ini`.
 - Pinyin shown automatically for Chinese words.
 - Per-word score history: well-known words come back less often.
 - Reverse the list direction, shuffle, print the list with scores, clear a word's score, or delete a word.

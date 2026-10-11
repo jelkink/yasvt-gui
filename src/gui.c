@@ -2,6 +2,7 @@
 
 #include "gui.h"
 #include "progress.h"
+#include "settings.h"
 #include "speech.h"
 #include "wordlist.h"
 
@@ -28,6 +29,7 @@ typedef struct {
     Mode mode;
     WordList *list;
     Progress *progress;
+    Settings *settings;
 } App;
 
 static const char *const mode_labels[MODE_COUNT] = {
@@ -35,7 +37,7 @@ static const char *const mode_labels[MODE_COUNT] = {
 };
 
 /* Speaks the target word in "hear and type" mode, otherwise the source word. */
-static void speak_current(App *app)
+static void speak_current(App *app, gboolean replace)
 {
     Word *word = wordlist_current(app->list);
     if (word == NULL)
@@ -43,14 +45,26 @@ static void speak_current(App *app)
 
     gboolean target = app->mode == MODE_HEAR_TYPE;
     const char *language = target ? word->target_language : word->source_language;
+    const char *text = target ? word->target : word->source;
     if (!speech_has_language(language))
         return;
 
+    if (!replace) {
+        speech_append(text, language);
+        return;
+    }
+
     GError *error = NULL;
-    if (!speech_say(target ? word->target : word->source, language, &error)) {
+    if (!speech_say(text, language, &error)) {
         gtk_label_set_text(GTK_LABEL(app->feedback_label), error->message);
         g_error_free(error);
     }
+}
+
+/* Native languages are not read out automatically. */
+static gboolean audible(const App *app, const char *language)
+{
+    return speech_has_language(language) && !settings_is_native(app->settings, language);
 }
 
 static Mode pick_mode(const App *app, const Word *word)
@@ -61,9 +75,9 @@ static Mode pick_mode(const App *app, const Word *word)
     for (int i = 0; i < MODE_COUNT; i++) {
         if (!gtk_check_button_get_active(GTK_CHECK_BUTTON(app->mode_check[i])))
             continue;
-        if (i == MODE_HEAR_TRANSLATE && !speech_has_language(word->source_language))
+        if (i == MODE_HEAR_TRANSLATE && !audible(app, word->source_language))
             continue;
-        if (i == MODE_HEAR_TYPE && !speech_has_language(word->target_language))
+        if (i == MODE_HEAR_TYPE && !audible(app, word->target_language))
             continue;
         candidates[count++] = (Mode)i;
     }
@@ -112,7 +126,7 @@ static void show_current_word(App *app)
     g_free(prompt);
 
     if (app->mode == MODE_HEAR_TRANSLATE || app->mode == MODE_HEAR_TYPE)
-        speak_current(app);
+        speak_current(app, FALSE);
 }
 
 static void show_score(App *app)
@@ -133,6 +147,22 @@ static char *format_pair(const Word *word)
     return pair;
 }
 
+static void speak_answer(const App *app, const Word *word, gboolean correct)
+{
+    speech_stop();
+    if (correct) {
+        if (audible(app, word->target_language))
+            speech_append(word->target, word->target_language);
+        else if (audible(app, word->source_language))
+            speech_append(word->source, word->source_language);
+        return;
+    }
+    if (audible(app, word->source_language))
+        speech_append(word->source, word->source_language);
+    if (audible(app, word->target_language))
+        speech_append(word->target, word->target_language);
+}
+
 static void on_answer(GtkEntry *entry, gpointer user_data)
 {
     App *app = user_data;
@@ -148,15 +178,18 @@ static void on_answer(GtkEntry *entry, gpointer user_data)
         feedback = g_strdup_printf("CORRECT! %s", pair);
         word_update_score(word, TRUE);
         progress_record(app->progress, word, TRUE);
+        speak_answer(app, word, TRUE);
     } else if (found != NULL) {
         feedback = g_strdup_printf("CORRECT! Although I was looking for: %s", pair);
         word_update_score(found, TRUE);
         progress_record(app->progress, found, TRUE);
+        speak_answer(app, found, TRUE);
     } else {
         feedback = g_strdup_printf("OOPS! %s%s%s", pair, word->note ? "\nNote: " : "",
                                    word->note ? word->note : "");
         word_update_score(word, FALSE);
         progress_record(app->progress, word, FALSE);
+        speak_answer(app, word, FALSE);
     }
 
     gtk_label_set_text(GTK_LABEL(app->feedback_label), feedback);
@@ -211,7 +244,7 @@ static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user
 static void on_speak_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
-    speak_current(user_data);
+    speak_current(user_data, TRUE);
 }
 
 static void on_reverse_clicked(GtkButton *button, gpointer user_data)
@@ -318,6 +351,55 @@ static void on_print_clicked(GtkButton *button, gpointer user_data)
     gtk_window_present(GTK_WINDOW(window));
 }
 
+static void on_native_toggled(GtkCheckButton *check, gpointer user_data)
+{
+    App *app = user_data;
+    const char *language = g_object_get_data(G_OBJECT(check), "language");
+    settings_set_native(app->settings, language, gtk_check_button_get_active(check));
+}
+
+static void on_settings_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    App *app = user_data;
+
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_top(box, 18);
+    gtk_widget_set_margin_bottom(box, 18);
+    gtk_widget_set_margin_start(box, 18);
+    gtk_widget_set_margin_end(box, 18);
+    gtk_box_append(GTK_BOX(box), gtk_label_new("Native languages (not read out automatically):"));
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 18);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+    for (guint i = 0; i < speech_language_count(); i++) {
+        const char *name = speech_language_name(i);
+        char *label = g_strdup(name);
+        label[0] = g_ascii_toupper(label[0]);
+
+        GtkWidget *check = gtk_check_button_new_with_label(label);
+        g_free(label);
+        g_object_set_data(G_OBJECT(check), "language", (gpointer)name);
+        gtk_check_button_set_active(GTK_CHECK_BUTTON(check), settings_is_native(app->settings, name));
+        g_signal_connect(check, "toggled", G_CALLBACK(on_native_toggled), app);
+        gtk_grid_attach(GTK_GRID(grid), check, (int)(i % 3), (int)(i / 3), 1, 1);
+    }
+    gtk_box_append(GTK_BOX(box), grid);
+
+    GtkWidget *window = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(window), "Settings");
+    gtk_window_set_transient_for(GTK_WINDOW(window), app->window);
+    gtk_window_set_modal(GTK_WINDOW(window), TRUE);
+    gtk_window_set_child(GTK_WINDOW(window), box);
+
+    GtkEventController *keys = gtk_event_controller_key_new();
+    g_signal_connect(keys, "key-pressed", G_CALLBACK(on_list_key), window);
+    gtk_widget_add_controller(window, keys);
+
+    gtk_window_present(GTK_WINDOW(window));
+}
+
 static GtkWidget *add_button(GtkWidget *box, const char *label, GCallback callback, App *app)
 {
     GtkWidget *button = gtk_button_new_with_label(label);
@@ -341,6 +423,7 @@ static void app_free(gpointer data)
     App *app = data;
     wordlist_free(app->list);
     progress_free(app->progress);
+    settings_free(app->settings);
     g_free(app);
 }
 
@@ -349,6 +432,7 @@ static App *build_window(GtkApplication *gtk_app)
     App *app = g_new0(App, 1);
     app->list = wordlist_new();
     app->progress = progress_new();
+    app->settings = settings_new();
 
     app->window = GTK_WINDOW(gtk_application_window_new(gtk_app));
     gtk_window_set_title(app->window, "yasvt-gui");
@@ -359,6 +443,9 @@ static App *build_window(GtkApplication *gtk_app)
     g_signal_connect(open_button, "clicked", G_CALLBACK(on_open_clicked), app);
     GtkWidget *header = gtk_header_bar_new();
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), open_button);
+    GtkWidget *settings_button = gtk_button_new_with_label("Settings");
+    g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_clicked), app);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), settings_button);
     gtk_window_set_titlebar(app->window, header);
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
