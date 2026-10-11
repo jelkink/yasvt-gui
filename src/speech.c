@@ -8,6 +8,10 @@ static const struct {
     const char *code;
 } languages[] = {
     {"english", "en"}, {"russian", "ru"}, {"chinese", "zh"}, {"hongkong", "yue"}, {"italian", "it"},
+    {"arabic", "ar"},  {"dutch", "nl"},   {"latin", "la"},   {"indonesian", "id"},
+    {"french", "fr"},  {"german", "de"},  {"spanish", "es"}, {"portuguese", "pt"},
+    {"japanese", "ja"}, {"korean", "ko"}, {"turkish", "tr"}, {"polish", "pl"},
+    {"hindi", "hi"},   {"greek", "el"},   {"swedish", "sv"},
 };
 
 static const char *language_code(const char *language)
