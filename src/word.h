@@ -8,9 +8,7 @@ typedef struct {
     const char *target_language; /* interned, lowercase */
     char *source;                /* UTF-8, NFC-normalized */
     char *target;                /* UTF-8, NFC-normalized */
-    char *note;                  /* may be NULL */
-    char *pinyin;                /* may be NULL; reading of the Chinese side */
-    gboolean pinyin_on_target;   /* which side the pinyin belongs to */
+    char *note;                  /* third CSV column, may be NULL */
     guint8 history;              /* last 8 results, bit 0 is the most recent */
     gboolean tested;
 } Word;
@@ -22,7 +20,7 @@ void word_free(Word *word);
 void word_update_score(Word *word, gboolean correct);
 double word_average_score(const Word *word);
 
-/* Source word, followed by its pinyin in parentheses when it has one. */
+/* Words followed by generated pinyin in parentheses when their language is Chinese. */
 char *word_format_source(const Word *word);
 char *word_format_target(const Word *word);
 

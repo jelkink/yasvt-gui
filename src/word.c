@@ -1,5 +1,9 @@
 #include "word.h"
 
+#include <string.h>
+
+#include "pinyin.h"
+
 char *text_normalize(const char *text)
 {
     char *trimmed = g_strstrip(g_strdup(text));
@@ -28,7 +32,6 @@ void word_free(Word *word)
     g_free(word->source);
     g_free(word->target);
     g_free(word->note);
-    g_free(word->pinyin);
     g_free(word);
 }
 
@@ -38,18 +41,25 @@ void word_update_score(Word *word, gboolean correct)
     word->tested = TRUE;
 }
 
+static char *with_pinyin(const char *language, const char *text)
+{
+    char *pinyin = strcmp(language, "chinese") == 0 ? pinyin_from_text(text) : NULL;
+    if (pinyin == NULL)
+        return g_strdup(text);
+
+    char *result = g_strdup_printf("%s (%s)", text, pinyin);
+    g_free(pinyin);
+    return result;
+}
+
 char *word_format_source(const Word *word)
 {
-    if (word->pinyin != NULL && !word->pinyin_on_target)
-        return g_strdup_printf("%s (%s)", word->source, word->pinyin);
-    return g_strdup(word->source);
+    return with_pinyin(word->source_language, word->source);
 }
 
 char *word_format_target(const Word *word)
 {
-    if (word->pinyin != NULL && word->pinyin_on_target)
-        return g_strdup_printf("%s (%s)", word->target, word->pinyin);
-    return g_strdup(word->target);
+    return with_pinyin(word->target_language, word->target);
 }
 
 void word_reverse(Word *word)
@@ -61,8 +71,6 @@ void word_reverse(Word *word)
     char *text = word->source;
     word->source = word->target;
     word->target = text;
-
-    word->pinyin_on_target = !word->pinyin_on_target;
 }
 
 void word_reset_score(Word *word)

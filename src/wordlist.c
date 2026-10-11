@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "csv.h"
-#include "pinyin.h"
 
 #define REINSERT_WINDOW 40
 
@@ -54,7 +53,6 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
     gboolean ok = TRUE;
     char *source_language = NULL;
     char *target_language = NULL;
-    gboolean third_is_pinyin = FALSE;
 
     for (guint i = 0; i < rows->len && ok; i++) {
         char **row = g_ptr_array_index(rows, i);
@@ -70,29 +68,14 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
         } else if (source_language == NULL) {
             source_language = language_name(row[0]);
             target_language = language_name(row[1]);
-            if (columns > 2) {
-                char *third = language_name(row[2]);
-                third_is_pinyin = strcmp(third, "pinyin") == 0;
-                g_free(third);
-            }
         } else {
             data_row++;
             if (data_row < start || (number > 0 && data_row >= (gint64)start + number))
                 continue;
 
-            const char *extra = columns > 2 ? row[2] : NULL;
-            Word *word = word_new(source_language, target_language, row[0], row[1],
-                                  third_is_pinyin ? NULL : extra);
-            if (third_is_pinyin && extra != NULL && *extra != '\0') {
-                word->pinyin = text_normalize(extra);
-                word->pinyin_on_target = strcmp(source_language, "chinese") != 0;
-            } else if (strcmp(source_language, "chinese") == 0) {
-                word->pinyin = pinyin_from_text(word->source);
-            } else if (strcmp(target_language, "chinese") == 0) {
-                word->pinyin = pinyin_from_text(word->target);
-                word->pinyin_on_target = TRUE;
-            }
-            g_ptr_array_add(list->words, word);
+            const char *note = columns > 2 ? row[2] : NULL;
+            g_ptr_array_add(list->words,
+                            word_new(source_language, target_language, row[0], row[1], note));
         }
     }
 
