@@ -117,15 +117,16 @@ void progress_record(Progress *progress, const Word *word, gboolean correct)
     save(progress);
 }
 
-static double weight(const Progress *progress, const Word *word)
+static const Entry *find_entry(const Progress *progress, const Word *word)
 {
     char *key = word_key(word);
     const Entry *entry = g_hash_table_lookup(progress->entries, key);
     g_free(key);
+    return entry;
+}
 
-    if (entry == NULL)
-        return 1.0;
-
+static double weight(const Entry *entry)
+{
     int correct = 0;
     for (int i = 0; i < 8; i++)
         correct += (entry->history >> i) & 1;
@@ -148,21 +149,45 @@ static int compare_keys_descending(const void *a, const void *b)
     return (ka < kb) - (ka > kb);
 }
 
-void progress_shuffle(const Progress *progress, WordList *list)
+void progress_shuffle(const Progress *progress, WordList *list, double new_fraction)
 {
     guint count = list->words->len;
-    Keyed *items = g_new(Keyed, count);
+    Keyed *seen = g_new(Keyed, count);
+    Word **fresh = g_new(Word *, count);
+    guint seen_count = 0;
+    guint fresh_count = 0;
 
-    /* Weighted random order (Efraimidis-Spirakis) with jitter on the weights. */
     for (guint i = 0; i < count; i++) {
         Word *word = g_ptr_array_index(list->words, i);
-        double w = weight(progress, word) * g_random_double_range(0.5, 1.5);
-        items[i].word = word;
-        items[i].key = pow(g_random_double(), 1.0 / w);
+        const Entry *entry = find_entry(progress, word);
+        if (entry == NULL) {
+            fresh[fresh_count++] = word;
+            continue;
+        }
+        /* Weighted random order (Efraimidis-Spirakis) with jitter on the weights. */
+        double w = weight(entry) * g_random_double_range(0.5, 1.5);
+        seen[seen_count].word = word;
+        seen[seen_count].key = pow(g_random_double(), 1.0 / w);
+        seen_count++;
     }
 
-    qsort(items, count, sizeof(Keyed), compare_keys_descending);
-    for (guint i = 0; i < count; i++)
-        list->words->pdata[i] = items[i].word;
-    g_free(items);
+    qsort(seen, seen_count, sizeof(Keyed), compare_keys_descending);
+    for (guint i = fresh_count; i > 1; i--) {
+        guint j = (guint)g_random_int_range(0, (gint)i);
+        Word *tmp = fresh[i - 1];
+        fresh[i - 1] = fresh[j];
+        fresh[j] = tmp;
+    }
+
+    /* New words are spread through the list at the requested rate. */
+    guint next_seen = 0;
+    guint next_fresh = 0;
+    for (guint out = 0; out < count; out++) {
+        gboolean take_fresh = next_fresh < fresh_count &&
+                              (next_seen >= seen_count || g_random_double() < new_fraction);
+        list->words->pdata[out] = take_fresh ? fresh[next_fresh++] : seen[next_seen++].word;
+    }
+
+    g_free(seen);
+    g_free(fresh);
 }

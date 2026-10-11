@@ -34,11 +34,12 @@ make uninstall                 # remove (use the same PREFIX)
 ## Usage
 
 ```bash
-yasvt-gui [--start N] [--number N] [FILE...]
+yasvt-gui [--start N] [--number N] [--new PCT] [FILE...]
 ```
 
 - `--start N`, `-s N`: first word to use, counted from 1 (default 1)
 - `--number N`, `-n N`: number of words to use (default: all)
+- `--new PCT`, `-N PCT`: share of never-seen words in the initial order, 0 to 100 (default 20)
 
 Files can also be opened from the **Open…** button.
 

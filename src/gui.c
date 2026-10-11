@@ -7,6 +7,7 @@
 
 static int range_start = 1;
 static int range_number = -1;
+static int new_percent = 20;
 
 typedef enum {
     MODE_TRANSLATE,
@@ -178,7 +179,7 @@ static void load_paths(App *app, const char *const *paths, guint count)
         }
     }
 
-    progress_shuffle(app->progress, app->list);
+    progress_shuffle(app->progress, app->list, new_percent / 100.0);
     char *message = g_strdup_printf("Loaded %u words.", app->list->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
     g_free(message);
@@ -442,7 +443,12 @@ static gint on_local_options(GApplication *gtk_app, GVariantDict *options, gpoin
     (void)user_data;
     g_variant_dict_lookup(options, "start", "i", &range_start);
     g_variant_dict_lookup(options, "number", "i", &range_number);
+    g_variant_dict_lookup(options, "new", "i", &new_percent);
 
+    if (new_percent < 0 || new_percent > 100) {
+        g_printerr("--new must be between 0 and 100\n");
+        return 1;
+    }
     if (range_start < 1) {
         g_printerr("--start must be at least 1\n");
         return 1;
@@ -457,6 +463,7 @@ int gui_run(int argc, char **argv)
     const GOptionEntry entries[] = {
         {"start", 's', 0, G_OPTION_ARG_INT, NULL, "First word to use, counted from 1 (default 1)", "N"},
         {"number", 'n', 0, G_OPTION_ARG_INT, NULL, "Number of words to use (default: all)", "N"},
+        {"new", 'N', 0, G_OPTION_ARG_INT, NULL, "Percentage of new words in the initial order (default 20)", "PCT"},
         {NULL, 0, 0, 0, NULL, NULL, NULL},
     };
     g_application_add_main_option_entries(G_APPLICATION(app), entries);
