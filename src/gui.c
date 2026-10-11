@@ -27,7 +27,12 @@ typedef struct {
     GtkWidget *score_label;
     GtkWidget *mode_check[MODE_COUNT];
     Mode mode;
-    WordList *list;
+    WordList *list; /* the queue: the words that pass the language filter, not owned */
+    WordList *all;  /* every loaded word, owns them */
+    GHashTable *excluded_source;
+    GHashTable *excluded_target;
+    GtkWidget *source_box;
+    GtkWidget *target_box;
     Progress *progress;
     Settings *settings;
 } App;
@@ -89,7 +94,9 @@ static void show_current_word(App *app)
     Word *word = wordlist_current(app->list);
 
     if (word == NULL) {
-        gtk_label_set_text(GTK_LABEL(app->prompt_label), "Open a vocabulary file to start");
+        gtk_label_set_text(GTK_LABEL(app->prompt_label),
+                           app->all->words->len > 0 ? "No words match the language filter"
+                                                    : "Open a vocabulary file to start");
         gtk_label_set_text(GTK_LABEL(app->word_label), "");
         gtk_widget_set_sensitive(app->entry, FALSE);
         return;
@@ -201,25 +208,106 @@ static void on_answer(GtkEntry *entry, gpointer user_data)
     show_current_word(app);
 }
 
+static gboolean passes_filter(const App *app, const Word *word)
+{
+    return !g_hash_table_contains(app->excluded_source, word->source_language) &&
+           !g_hash_table_contains(app->excluded_target, word->target_language);
+}
+
+static void apply_filter(App *app)
+{
+    g_ptr_array_set_size(app->list->words, 0);
+    for (guint i = 0; i < app->all->words->len; i++) {
+        Word *word = g_ptr_array_index(app->all->words, i);
+        if (passes_filter(app, word))
+            g_ptr_array_add(app->list->words, word);
+    }
+    progress_shuffle(app->progress, app->list, new_percent / 100.0);
+    show_score(app);
+    show_current_word(app);
+}
+
+static int compare_names(gconstpointer a, gconstpointer b)
+{
+    return g_strcmp0(*(const char *const *)a, *(const char *const *)b);
+}
+
+static void on_filter_toggled(GtkCheckButton *check, gpointer user_data)
+{
+    App *app = user_data;
+    GHashTable *excluded = g_object_get_data(G_OBJECT(check), "excluded");
+    const char *language = g_object_get_data(G_OBJECT(check), "language");
+
+    if (gtk_check_button_get_active(check))
+        g_hash_table_remove(excluded, language);
+    else
+        g_hash_table_add(excluded, g_strdup(language));
+    apply_filter(app);
+}
+
+static void fill_filter_box(App *app, GtkWidget *box, GHashTable *excluded, gboolean source)
+{
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(box)) != NULL)
+        gtk_box_remove(GTK_BOX(box), child);
+
+    GPtrArray *names = g_ptr_array_new();
+    for (guint i = 0; i < app->all->words->len; i++) {
+        const Word *word = g_ptr_array_index(app->all->words, i);
+        const char *language = source ? word->source_language : word->target_language;
+        if (!g_ptr_array_find_with_equal_func(names, language, g_str_equal, NULL))
+            g_ptr_array_add(names, (gpointer)language);
+    }
+    g_ptr_array_sort(names, compare_names);
+
+    for (guint i = 0; i < names->len; i++) {
+        const char *name = g_ptr_array_index(names, i);
+        char first[8] = {0};
+        g_unichar_to_utf8(g_unichar_toupper(g_utf8_get_char(name)), first);
+        char *label = g_strconcat(first, g_utf8_next_char(name), NULL);
+
+        GtkWidget *check = gtk_check_button_new_with_label(label);
+        g_free(label);
+        g_object_set_data_full(G_OBJECT(check), "language", g_strdup(name), g_free);
+        g_object_set_data(G_OBJECT(check), "excluded", excluded);
+        gtk_check_button_set_active(GTK_CHECK_BUTTON(check), !g_hash_table_contains(excluded, name));
+        g_signal_connect(check, "toggled", G_CALLBACK(on_filter_toggled), app);
+        gtk_box_append(GTK_BOX(box), check);
+    }
+    g_ptr_array_free(names, TRUE);
+}
+
+static void rebuild_filter_panel(App *app)
+{
+    fill_filter_box(app, app->source_box, app->excluded_source, TRUE);
+    fill_filter_box(app, app->target_box, app->excluded_target, FALSE);
+}
+
 static void load_paths(App *app, const char *const *paths, guint count)
 {
     g_ptr_array_set_size(app->list->words, 0);
+    g_ptr_array_set_size(app->all->words, 0);
+    g_hash_table_remove_all(app->excluded_source);
+    g_hash_table_remove_all(app->excluded_target);
+
     for (guint i = 0; i < count; i++) {
         GError *error = NULL;
-        if (!wordlist_load_file(app->list, paths[i], range_start, range_number, &error)) {
+        if (!wordlist_load_file(app->all, paths[i], range_start, range_number, &error)) {
             gtk_label_set_text(GTK_LABEL(app->feedback_label), error->message);
             g_error_free(error);
+            rebuild_filter_panel(app);
+            show_score(app);
+            show_current_word(app);
             return;
         }
     }
 
-    progress_register(app->progress, app->list);
-    progress_shuffle(app->progress, app->list, new_percent / 100.0);
-    char *message = g_strdup_printf("Loaded %u words.", app->list->words->len);
+    progress_register(app->progress, app->all);
+    rebuild_filter_panel(app);
+    char *message = g_strdup_printf("Loaded %u words.", app->all->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
     g_free(message);
-    show_score(app);
-    show_current_word(app);
+    apply_filter(app);
 }
 
 static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user_data)
@@ -252,15 +340,17 @@ static void on_reverse_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
     App *app = user_data;
-    for (guint i = 0; i < app->list->words->len; i++) {
-        Word *word = g_ptr_array_index(app->list->words, i);
+    for (guint i = 0; i < app->all->words->len; i++) {
+        Word *word = g_ptr_array_index(app->all->words, i);
         word_reverse(word);
         word_reset_score(word);
         word->tested = FALSE;
     }
-    progress_shuffle(app->progress, app->list, new_percent / 100.0);
-    show_score(app);
-    show_current_word(app);
+    GHashTable *swap = app->excluded_source;
+    app->excluded_source = app->excluded_target;
+    app->excluded_target = swap;
+    rebuild_filter_panel(app);
+    apply_filter(app);
 }
 
 static void on_shuffle_clicked(GtkButton *button, gpointer user_data)
@@ -288,7 +378,8 @@ static void on_delete_clicked(GtkButton *button, gpointer user_data)
     App *app = user_data;
     if (app->list->words->len == 0)
         return;
-    g_ptr_array_remove_index(app->list->words, 0);
+    Word *word = g_ptr_array_steal_index(app->list->words, 0);
+    g_ptr_array_remove(app->all->words, word);
     show_score(app);
     show_current_word(app);
 }
@@ -423,6 +514,9 @@ static void app_free(gpointer data)
 {
     App *app = data;
     wordlist_free(app->list);
+    wordlist_free(app->all);
+    g_hash_table_unref(app->excluded_source);
+    g_hash_table_unref(app->excluded_target);
     progress_free(app->progress);
     settings_free(app->settings);
     g_free(app);
@@ -432,6 +526,11 @@ static App *build_window(GtkApplication *gtk_app)
 {
     App *app = g_new0(App, 1);
     app->list = wordlist_new();
+    g_ptr_array_unref(app->list->words);
+    app->list->words = g_ptr_array_new();
+    app->all = wordlist_new();
+    app->excluded_source = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    app->excluded_target = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     app->progress = progress_new();
     app->settings = settings_new();
 
@@ -500,8 +599,26 @@ static App *build_window(GtkApplication *gtk_app)
     gtk_box_append(GTK_BOX(box), buttons);
     gtk_widget_set_hexpand(box, TRUE);
 
+    GtkWidget *filters = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_margin_top(filters, 24);
+    gtk_widget_set_margin_bottom(filters, 24);
+    gtk_widget_set_margin_start(filters, 18);
+    gtk_box_append(GTK_BOX(filters), gtk_label_new("Shown language"));
+    app->source_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_box_append(GTK_BOX(filters), app->source_box);
+    gtk_box_append(GTK_BOX(filters), gtk_label_new("Typed language"));
+    app->target_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_box_append(GTK_BOX(filters), app->target_box);
+
+    GtkWidget *filters_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(filters_scroll), GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(filters_scroll), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(filters_scroll), filters);
+
     GtkWidget *layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_widget_set_margin_end(layout, 24);
+    gtk_box_append(GTK_BOX(layout), filters_scroll);
     gtk_box_append(GTK_BOX(layout), box);
     gtk_box_append(GTK_BOX(layout), modes);
     gtk_window_set_child(app->window, layout);
@@ -517,15 +634,14 @@ static void on_activate(GApplication *gtk_app, gpointer user_data)
     (void)user_data;
     App *app = build_window(GTK_APPLICATION(gtk_app));
 
-    if (progress_load_words(app->progress, app->list) == 0)
+    if (progress_load_words(app->progress, app->all) == 0)
         return;
-    progress_shuffle(app->progress, app->list, new_percent / 100.0);
+    rebuild_filter_panel(app);
     char *message = g_strdup_printf("Loaded %u words from your progress. Open a file to use a different set.",
-                                    app->list->words->len);
+                                    app->all->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
     g_free(message);
-    show_score(app);
-    show_current_word(app);
+    apply_filter(app);
 }
 
 static void on_open(GApplication *gtk_app, GFile **files, gint n_files, const char *hint,
