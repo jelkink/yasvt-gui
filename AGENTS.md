@@ -28,6 +28,8 @@ Keep the two kinds of history separate:
 - Languages are lowercase names from the CSV header. The first CSV column is the language the user types (`target`), the second is the one shown (`source`).
 - Chinese (language exactly `chinese`) is stored as simplified. Typed answers are converted to simplified before comparing; traditional is only a display option (`word_set_traditional`).
 - Progress entries are keyed by an MD5 of both languages and both words, per direction. A word with `last_seen == 0` is registered but still counts as new.
+- Progress is only written by `progress_flush()` (30 s timer, closing the app) and by the editor and registration; `progress_record()` just marks it dirty. Per-word `ease` only affects the persistent interval, never the in-session score.
+- The statistics and progress editor windows live in `src/progress_ui.c`; the editor reports edits and deletions through hooks so that `app->all` and the queue stay in sync.
 
 ## Conventions
 

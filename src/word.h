@@ -17,6 +17,9 @@ Word *word_new(const char *source_language, const char *target_language,
                const char *source, const char *target, const char *note);
 void word_free(Word *word);
 
+/* Replaces the texts, normalizing them like word_new(). */
+void word_set_text(Word *word, const char *source, const char *target, const char *note);
+
 void word_update_score(Word *word, gboolean correct);
 double word_average_score(const Word *word);
 

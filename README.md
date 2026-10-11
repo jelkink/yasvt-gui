@@ -61,17 +61,22 @@ In this example you are shown "maybe" and type "возможно". Answers must 
 
 ## Progress and word order
 
-Every word you open is recorded in `~/.local/share/yasvt-gui/progress.txt`, together with your last 8 results for it, when you last answered it, and how many days it takes to become due again. The record is separate for each direction (for example Russian→English and English→Russian). It is updated after each answer.
+Every word you open is recorded in `~/.local/share/yasvt-gui/progress.txt`, together with your last 8 results for it, when you last answered it, and how many days it takes to become due again. The record is separate for each direction (for example Russian→English and English→Russian). It is saved every 30 seconds and when you close the program.
 
 This record only decides the **initial order** after opening a file, starting without a file, or pressing **Reverse** or changing the language filter:
 
-- Words you have practised come first when they are poorly known or due again; well-known words that were seen recently go to the back. The interval before a word is due doubles after a correct answer (at most once a day, up to a year) and resets after a wrong one. Some randomness keeps the order from being predictable.
+- Words you have practised come first when they are poorly known or due again; well-known words that were seen recently go to the back. The interval before a word is due grows after a correct answer (at most once a day, up to a year) by a per-word ease factor that starts at 2 and drops for words that keep going wrong, so difficult words are reviewed more often. A wrong answer resets the interval to a day. Some randomness keeps the order from being predictable.
 - Words you have never answered are mixed in at a fixed rate, 20% by default (`--new`).
 - **Shuffle** ignores the record and shuffles completely at random.
 
 After that, the order during the session follows the in-session score: a word you answer comes back later when it is well known and sooner when it is not. The in-session score starts from zero for every run, and **Reverse** resets it.
 
 The progress file is plain text, one word per line. Deleting it resets all progress.
+
+### Statistics and editing
+
+- **Statistics** shows, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
+- **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
 
 ## Audio
 

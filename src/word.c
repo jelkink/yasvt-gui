@@ -69,6 +69,16 @@ Word *word_new(const char *source_language, const char *target_language,
     return word;
 }
 
+void word_set_text(Word *word, const char *source, const char *target, const char *note)
+{
+    g_free(word->source);
+    g_free(word->target);
+    g_free(word->note);
+    word->source = normalize_for(word->source_language, source);
+    word->target = normalize_for(word->target_language, target);
+    word->note = note != NULL && *note != '\0' ? text_normalize(note) : NULL;
+}
+
 void word_free(Word *word)
 {
     if (word == NULL)

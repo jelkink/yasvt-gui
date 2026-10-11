@@ -2,6 +2,7 @@
 
 #include "gui.h"
 #include "progress.h"
+#include "progress_ui.h"
 #include "settings.h"
 #include "speech.h"
 #include "wordlist.h"
@@ -35,6 +36,7 @@ typedef struct {
     GtkWidget *target_box;
     Progress *progress;
     Settings *settings;
+    guint save_timer;
 } App;
 
 static const char *const mode_labels[MODE_COUNT] = {
@@ -340,6 +342,16 @@ static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user
     g_object_unref(files);
 }
 
+static void refresh_word_label(App *app)
+{
+    Word *word = wordlist_current(app->list);
+    if (word == NULL)
+        return;
+    char *shown = shown_text(app->mode, word);
+    gtk_label_set_text(GTK_LABEL(app->word_label), shown);
+    g_free(shown);
+}
+
 static void on_script_toggled(GtkCheckButton *check, gpointer user_data)
 {
     App *app = user_data;
@@ -349,13 +361,7 @@ static void on_script_toggled(GtkCheckButton *check, gpointer user_data)
     gboolean traditional = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(check), "traditional"));
     settings_set_traditional(app->settings, traditional);
     word_set_traditional(traditional);
-
-    Word *word = wordlist_current(app->list);
-    if (word == NULL)
-        return;
-    char *shown = shown_text(app->mode, word);
-    gtk_label_set_text(GTK_LABEL(app->word_label), shown);
-    g_free(shown);
+    refresh_word_label(app);
 }
 
 static void on_speak_clicked(GtkButton *button, gpointer user_data)
@@ -520,6 +526,66 @@ static void on_settings_clicked(GtkButton *button, gpointer user_data)
     gtk_window_present(GTK_WINDOW(window));
 }
 
+static Word *find_word(const App *app, const ProgressItem *item)
+{
+    for (guint i = 0; i < app->all->words->len; i++) {
+        Word *word = g_ptr_array_index(app->all->words, i);
+        if (g_strcmp0(word->source_language, item->source_language) == 0 &&
+            g_strcmp0(word->target_language, item->target_language) == 0 &&
+            g_strcmp0(word->source, item->source) == 0 && g_strcmp0(word->target, item->target) == 0)
+            return word;
+    }
+    return NULL;
+}
+
+static void on_progress_edited(gpointer data, const ProgressItem *before, const ProgressItem *after)
+{
+    App *app = data;
+    Word *word = find_word(app, before);
+    if (word == NULL)
+        return;
+    word_set_text(word, after->source, after->target, after->note);
+    refresh_word_label(app);
+}
+
+static void on_progress_removed(gpointer data, const ProgressItem *item)
+{
+    App *app = data;
+    Word *word = find_word(app, item);
+    if (word == NULL)
+        return;
+
+    gboolean was_current = wordlist_current(app->list) == word;
+    g_ptr_array_remove(app->list->words, word);
+    g_ptr_array_remove(app->all->words, word);
+    show_score(app);
+    if (was_current)
+        show_current_word(app);
+}
+
+static void on_editor_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    App *app = user_data;
+    ProgressEditorHooks hooks = {on_progress_edited, on_progress_removed, app};
+    progress_editor_open(app->window, app->progress, &hooks);
+}
+
+static void on_stats_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    App *app = user_data;
+    progress_flush(app->progress);
+    progress_stats_open(app->window, app->progress);
+}
+
+static gboolean on_save_timer(gpointer user_data)
+{
+    App *app = user_data;
+    progress_flush(app->progress);
+    return G_SOURCE_CONTINUE;
+}
+
 static GtkWidget *add_button(GtkWidget *box, const char *label, GCallback callback, App *app)
 {
     GtkWidget *button = gtk_button_new_with_label(label);
@@ -541,6 +607,8 @@ static void on_open_clicked(GtkButton *button, gpointer user_data)
 static void app_free(gpointer data)
 {
     App *app = data;
+    if (app->save_timer != 0)
+        g_source_remove(app->save_timer);
     wordlist_free(app->list);
     wordlist_free(app->all);
     g_hash_table_unref(app->excluded_source);
@@ -560,6 +628,7 @@ static App *build_window(GtkApplication *gtk_app)
     app->excluded_source = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     app->excluded_target = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     app->progress = progress_new();
+    app->save_timer = g_timeout_add_seconds(30, on_save_timer, app);
     app->settings = settings_new();
     word_set_traditional(settings_get_traditional(app->settings));
 
@@ -575,6 +644,12 @@ static App *build_window(GtkApplication *gtk_app)
     GtkWidget *settings_button = gtk_button_new_with_label("Settings");
     g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_clicked), app);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), settings_button);
+    GtkWidget *editor_button = gtk_button_new_with_label("Edit progress");
+    g_signal_connect(editor_button, "clicked", G_CALLBACK(on_editor_clicked), app);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), editor_button);
+    GtkWidget *stats_button = gtk_button_new_with_label("Statistics");
+    g_signal_connect(stats_button, "clicked", G_CALLBACK(on_stats_clicked), app);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), stats_button);
     gtk_window_set_titlebar(app->window, header);
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
