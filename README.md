@@ -1,6 +1,8 @@
-# yasvt-gui
+# Yet Another Simple Vocabulary Trainer
 
 Yet Another Simple Vocabulary Trainer: a GTK 4 graphical vocabulary trainer written in C. It is a port of [yasvt-python](https://github.com/) with the same scoring and test ideas.
+
+While lead by Jos Dornschneider-Elkink, the code is written by AI.
 
 ## Features
 
