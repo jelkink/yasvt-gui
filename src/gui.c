@@ -170,6 +170,7 @@ static void on_answer(GtkEntry *entry, gpointer user_data)
 
 static void load_paths(App *app, const char *const *paths, guint count)
 {
+    g_ptr_array_set_size(app->list->words, 0);
     for (guint i = 0; i < count; i++) {
         GError *error = NULL;
         if (!wordlist_load_file(app->list, paths[i], range_start, range_number, &error)) {
@@ -217,8 +218,14 @@ static void on_reverse_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
     App *app = user_data;
-    for (guint i = 0; i < app->list->words->len; i++)
-        word_reverse(g_ptr_array_index(app->list->words, i));
+    for (guint i = 0; i < app->list->words->len; i++) {
+        Word *word = g_ptr_array_index(app->list->words, i);
+        word_reverse(word);
+        word_reset_score(word);
+        word->tested = FALSE;
+    }
+    progress_shuffle(app->progress, app->list, new_percent / 100.0);
+    show_score(app);
     show_current_word(app);
 }
 
@@ -420,7 +427,17 @@ static App *build_window(GtkApplication *gtk_app)
 static void on_activate(GApplication *gtk_app, gpointer user_data)
 {
     (void)user_data;
-    build_window(GTK_APPLICATION(gtk_app));
+    App *app = build_window(GTK_APPLICATION(gtk_app));
+
+    if (progress_load_words(app->progress, app->list) == 0)
+        return;
+    progress_shuffle(app->progress, app->list, 0.0);
+    char *message = g_strdup_printf("Loaded %u words from your progress. Open a file to use a different set.",
+                                    app->list->words->len);
+    gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
+    g_free(message);
+    show_score(app);
+    show_current_word(app);
 }
 
 static void on_open(GApplication *gtk_app, GFile **files, gint n_files, const char *hint,

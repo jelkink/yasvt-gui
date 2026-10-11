@@ -41,7 +41,7 @@ yasvt-gui [--start N] [--number N] [--new PCT] [FILE...]
 - `--number N`, `-n N`: number of words to use (default: all)
 - `--new PCT`, `-N PCT`: share of never-seen words in the initial order, 0 to 100 (default 20)
 
-Files can also be opened from the **Open…** button.
+Files can also be opened from the **Open…** button. Opening files replaces the current word list. Started without files, the program continues with all words you have practised before, taken from the progress file (`~/.local/share/yasvt-gui/progress.txt`).
 
 ## Vocabulary files
 

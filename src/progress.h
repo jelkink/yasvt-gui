@@ -16,6 +16,9 @@ void progress_free(Progress *progress);
 /* Records an answer and saves the progress file. */
 void progress_record(Progress *progress, const Word *word, gboolean correct);
 
+/* Appends every word with recorded progress to the list; returns how many. */
+guint progress_load_words(const Progress *progress, WordList *list);
+
 /* Initial order: words already practised, most due and least known first, with never-seen
  * words mixed in at rate `new_fraction` (0..1). */
 void progress_shuffle(const Progress *progress, WordList *list, double new_fraction);
