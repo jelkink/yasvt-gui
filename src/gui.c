@@ -1,10 +1,19 @@
 #include <gtk/gtk.h>
 
 #include "gui.h"
+#include "speech.h"
 #include "wordlist.h"
 
 static int range_start = 1;
 static int range_number = -1;
+
+typedef enum {
+    MODE_TRANSLATE,
+    MODE_TYPE,
+    MODE_HEAR_TRANSLATE,
+    MODE_HEAR_TYPE,
+    MODE_COUNT,
+} Mode;
 
 typedef struct {
     GtkWindow *window;
@@ -13,8 +22,50 @@ typedef struct {
     GtkWidget *entry;
     GtkWidget *feedback_label;
     GtkWidget *score_label;
+    GtkWidget *mode_check[MODE_COUNT];
+    Mode mode;
     WordList *list;
 } App;
+
+static const char *const mode_labels[MODE_COUNT] = {
+    "Translate", "Type the word", "Hear and translate", "Hear and type",
+};
+
+/* Speaks the target word in "hear and type" mode, otherwise the source word. */
+static void speak_current(App *app)
+{
+    Word *word = wordlist_current(app->list);
+    if (word == NULL)
+        return;
+
+    gboolean target = app->mode == MODE_HEAR_TYPE;
+    const char *language = target ? word->target_language : word->source_language;
+    if (!speech_has_language(language))
+        return;
+
+    GError *error = NULL;
+    if (!speech_say(target ? word->target : word->source, language, &error)) {
+        gtk_label_set_text(GTK_LABEL(app->feedback_label), error->message);
+        g_error_free(error);
+    }
+}
+
+static Mode pick_mode(const App *app, const Word *word)
+{
+    Mode candidates[MODE_COUNT];
+    int count = 0;
+
+    for (int i = 0; i < MODE_COUNT; i++) {
+        if (!gtk_check_button_get_active(GTK_CHECK_BUTTON(app->mode_check[i])))
+            continue;
+        if (i == MODE_HEAR_TRANSLATE && !speech_has_language(word->source_language))
+            continue;
+        if (i == MODE_HEAR_TYPE && !speech_has_language(word->target_language))
+            continue;
+        candidates[count++] = (Mode)i;
+    }
+    return count == 0 ? MODE_TRANSLATE : candidates[g_random_int_range(0, count)];
+}
 
 static void show_current_word(App *app)
 {
@@ -27,14 +78,38 @@ static void show_current_word(App *app)
         return;
     }
 
-    char *prompt = g_strdup_printf("Translate from %s to %s:", word->source_language,
-                                   word->target_language);
+    app->mode = pick_mode(app, word);
+    char *prompt;
+    const char *shown;
+    switch (app->mode) {
+    case MODE_TYPE:
+        prompt = g_strdup_printf("Type out the word in %s:", word->target_language);
+        shown = word->target;
+        break;
+    case MODE_HEAR_TRANSLATE:
+        prompt = g_strdup_printf("Translate what you hear from %s to %s:", word->source_language,
+                                 word->target_language);
+        shown = "🔊";
+        break;
+    case MODE_HEAR_TYPE:
+        prompt = g_strdup_printf("Type out the word you hear in %s:", word->target_language);
+        shown = "🔊";
+        break;
+    default:
+        prompt = g_strdup_printf("Translate from %s to %s:", word->source_language,
+                                 word->target_language);
+        shown = word->source;
+        break;
+    }
     gtk_label_set_text(GTK_LABEL(app->prompt_label), prompt);
-    gtk_label_set_text(GTK_LABEL(app->word_label), word->source);
+    gtk_label_set_text(GTK_LABEL(app->word_label), shown);
     gtk_widget_set_sensitive(app->entry, TRUE);
     gtk_editable_set_text(GTK_EDITABLE(app->entry), "");
     gtk_widget_grab_focus(app->entry);
     g_free(prompt);
+
+    if (app->mode == MODE_HEAR_TRANSLATE || app->mode == MODE_HEAR_TYPE)
+        speak_current(app);
 }
 
 static void show_score(App *app)
@@ -124,6 +199,12 @@ static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user
     load_paths(app, (const char *const *)paths, count);
     g_strfreev(paths);
     g_object_unref(files);
+}
+
+static void on_speak_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    speak_current(user_data);
 }
 
 static void on_reverse_clicked(GtkButton *button, gpointer user_data)
@@ -271,6 +352,15 @@ static App *build_window(GtkApplication *gtk_app)
     gtk_widget_set_margin_start(box, 24);
     gtk_widget_set_margin_end(box, 24);
 
+    GtkWidget *modes = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_valign(modes, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(modes), gtk_label_new("Test modes"));
+    for (int i = 0; i < MODE_COUNT; i++) {
+        app->mode_check[i] = gtk_check_button_new_with_label(mode_labels[i]);
+        gtk_check_button_set_active(GTK_CHECK_BUTTON(app->mode_check[i]), TRUE);
+        gtk_box_append(GTK_BOX(modes), app->mode_check[i]);
+    }
+
     app->prompt_label = gtk_label_new(NULL);
 
     app->word_label = gtk_label_new(NULL);
@@ -292,6 +382,7 @@ static App *build_window(GtkApplication *gtk_app)
 
     GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_widget_set_halign(buttons, GTK_ALIGN_CENTER);
+    add_button(buttons, "Speak", G_CALLBACK(on_speak_clicked), app);
     add_button(buttons, "Reverse", G_CALLBACK(on_reverse_clicked), app);
     add_button(buttons, "Shuffle", G_CALLBACK(on_shuffle_clicked), app);
     add_button(buttons, "Print list", G_CALLBACK(on_print_clicked), app);
@@ -304,7 +395,13 @@ static App *build_window(GtkApplication *gtk_app)
     gtk_box_append(GTK_BOX(box), app->feedback_label);
     gtk_box_append(GTK_BOX(box), app->score_label);
     gtk_box_append(GTK_BOX(box), buttons);
-    gtk_window_set_child(app->window, box);
+    gtk_widget_set_hexpand(box, TRUE);
+
+    GtkWidget *layout = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_margin_end(layout, 24);
+    gtk_box_append(GTK_BOX(layout), box);
+    gtk_box_append(GTK_BOX(layout), modes);
+    gtk_window_set_child(app->window, layout);
 
     show_score(app);
     show_current_word(app);
