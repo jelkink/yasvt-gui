@@ -29,6 +29,24 @@ static char *language_name(const char *text)
     return lower;
 }
 
+/* Picks the more frequent of ',' and ';' on the header line, ignoring quoted text. */
+static char detect_delimiter(const char *data)
+{
+    int commas = 0;
+    int semicolons = 0;
+    gboolean quoted = FALSE;
+
+    for (const char *p = data; *p != '\0' && (quoted || (*p != '\n' && *p != '\r')); p++) {
+        if (*p == '"')
+            quoted = !quoted;
+        else if (!quoted && *p == ',')
+            commas++;
+        else if (!quoted && *p == ';')
+            semicolons++;
+    }
+    return semicolons > commas ? ';' : ',';
+}
+
 gboolean wordlist_load_file(WordList *list, const char *path, int start, int number,
                             GError **error)
 {
@@ -49,7 +67,7 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
     if (g_str_has_prefix(data, "\xEF\xBB\xBF"))
         data += 3;
 
-    GPtrArray *rows = csv_parse(data, ',');
+    GPtrArray *rows = csv_parse(data, detect_delimiter(data));
     gboolean ok = TRUE;
     char *source_language = NULL;
     char *target_language = NULL;
