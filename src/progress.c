@@ -190,6 +190,8 @@ void progress_record(Progress *progress, const Word *word, gboolean correct)
     gboolean new_day = entry->last_seen == 0 || (now - entry->last_seen) >= SECONDS_PER_DAY;
     if (!correct)
         entry->interval = 1.0;
+    else if (entry->last_seen == 0)
+        entry->interval = 1.0;
     else if (new_day)
         entry->interval = MIN(MAX(entry->interval * 2.0, 1.0), MAX_INTERVAL_DAYS);
 
@@ -230,6 +232,24 @@ static int compare_keys_descending(const void *a, const void *b)
     return (ka < kb) - (ka > kb);
 }
 
+void progress_register(Progress *progress, const WordList *list)
+{
+    for (guint i = 0; i < list->words->len; i++) {
+        const Word *word = g_ptr_array_index(list->words, i);
+        char *key = word_key(word);
+        if (g_hash_table_contains(progress->entries, key)) {
+            g_free(key);
+            continue;
+        }
+
+        Entry *entry = g_new0(Entry, 1);
+        entry->interval = 1.0;
+        entry_set_word(entry, word);
+        g_hash_table_insert(progress->entries, key, entry);
+    }
+    save(progress);
+}
+
 guint progress_load_words(const Progress *progress, WordList *list)
 {
     GHashTableIter iter;
@@ -255,7 +275,7 @@ void progress_shuffle(const Progress *progress, WordList *list, double new_fract
     for (guint i = 0; i < count; i++) {
         Word *word = g_ptr_array_index(list->words, i);
         const Entry *entry = find_entry(progress, word);
-        if (entry == NULL) {
+        if (entry == NULL || entry->last_seen == 0) {
             fresh[fresh_count++] = word;
             continue;
         }

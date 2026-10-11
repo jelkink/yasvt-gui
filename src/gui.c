@@ -213,6 +213,7 @@ static void load_paths(App *app, const char *const *paths, guint count)
         }
     }
 
+    progress_register(app->progress, app->list);
     progress_shuffle(app->progress, app->list, new_percent / 100.0);
     char *message = g_strdup_printf("Loaded %u words.", app->list->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
@@ -518,7 +519,7 @@ static void on_activate(GApplication *gtk_app, gpointer user_data)
 
     if (progress_load_words(app->progress, app->list) == 0)
         return;
-    progress_shuffle(app->progress, app->list, 0.0);
+    progress_shuffle(app->progress, app->list, new_percent / 100.0);
     char *message = g_strdup_printf("Loaded %u words from your progress. Open a file to use a different set.",
                                     app->list->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
