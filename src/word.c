@@ -2,7 +2,51 @@
 
 #include <string.h>
 
+#include "hanzi.h"
 #include "pinyin.h"
+
+static gboolean show_traditional;
+
+static gboolean is_chinese(const char *language)
+{
+    return strcmp(language, "chinese") == 0;
+}
+
+static char *normalize_for(const char *language, const char *text)
+{
+    char *normalized = text_normalize(text);
+    if (!is_chinese(language))
+        return normalized;
+
+    char *simplified = hanzi_to_simplified(normalized);
+    g_free(normalized);
+    return simplified;
+}
+
+char *word_normalize_answer(const char *language, const char *text)
+{
+    return normalize_for(language, text);
+}
+
+void word_set_traditional(gboolean traditional)
+{
+    show_traditional = traditional;
+}
+
+static char *display_text(const char *language, const char *text)
+{
+    return show_traditional && is_chinese(language) ? hanzi_to_traditional(text) : g_strdup(text);
+}
+
+char *word_display_source(const Word *word)
+{
+    return display_text(word->source_language, word->source);
+}
+
+char *word_display_target(const Word *word)
+{
+    return display_text(word->target_language, word->target);
+}
 
 char *text_normalize(const char *text)
 {
@@ -18,8 +62,8 @@ Word *word_new(const char *source_language, const char *target_language,
     Word *word = g_new0(Word, 1);
     word->source_language = g_intern_string(source_language);
     word->target_language = g_intern_string(target_language);
-    word->source = text_normalize(source);
-    word->target = text_normalize(target);
+    word->source = normalize_for(source_language, source);
+    word->target = normalize_for(target_language, target);
     if (note != NULL && *note != '\0')
         word->note = text_normalize(note);
     return word;
@@ -43,11 +87,13 @@ void word_update_score(Word *word, gboolean correct)
 
 static char *with_pinyin(const char *language, const char *text)
 {
-    char *pinyin = strcmp(language, "chinese") == 0 ? pinyin_from_text(text) : NULL;
+    char *shown = display_text(language, text);
+    char *pinyin = is_chinese(language) ? pinyin_from_text(text) : NULL;
     if (pinyin == NULL)
-        return g_strdup(text);
+        return shown;
 
-    char *result = g_strdup_printf("%s (%s)", text, pinyin);
+    char *result = g_strdup_printf("%s (%s)", shown, pinyin);
+    g_free(shown);
     g_free(pinyin);
     return result;
 }

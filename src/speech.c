@@ -7,7 +7,7 @@ static const struct {
     const char *name;
     const char *code;
 } languages[] = {
-    {"english", "en"}, {"russian", "ru"}, {"chinese", "zh"}, {"hongkong", "yue"}, {"italian", "it"},
+    {"english", "en"}, {"russian", "ru"}, {"chinese", "zh"}, {"cantonese", "yue"}, {"italian", "it"},
     {"arabic", "ar"},  {"dutch", "nl"},   {"latin", "la"},   {"indonesian", "id"},
     {"french", "fr"},  {"german", "de"},  {"spanish", "es"}, {"portuguese", "pt"},
     {"japanese", "ja"}, {"korean", "ko"}, {"turkish", "tr"}, {"polish", "pl"},

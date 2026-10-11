@@ -139,16 +139,18 @@ void wordlist_reinsert_current(WordList *list)
 
 Word *wordlist_check(const WordList *list, const char *asked, const char *answer)
 {
-    char *normalized = text_normalize(answer);
     Word *found = NULL;
 
     for (guint i = 0; i < list->words->len && found == NULL; i++) {
         Word *word = g_ptr_array_index(list->words, i);
-        if (strcmp(word->source, asked) == 0 && strcmp(word->target, normalized) == 0)
-            found = word;
-    }
+        if (strcmp(word->source, asked) != 0)
+            continue;
 
-    g_free(normalized);
+        char *normalized = word_normalize_answer(word->target_language, answer);
+        if (strcmp(word->target, normalized) == 0)
+            found = word;
+        g_free(normalized);
+    }
     return found;
 }
 

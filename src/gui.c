@@ -89,6 +89,19 @@ static Mode pick_mode(const App *app, const Word *word)
     return count == 0 ? MODE_TRANSLATE : candidates[g_random_int_range(0, count)];
 }
 
+static char *shown_text(Mode mode, const Word *word)
+{
+    switch (mode) {
+    case MODE_TYPE:
+        return word_display_target(word);
+    case MODE_HEAR_TRANSLATE:
+    case MODE_HEAR_TYPE:
+        return g_strdup("🔊");
+    default:
+        return word_display_source(word);
+    }
+}
+
 static void show_current_word(App *app)
 {
     Word *word = wordlist_current(app->list);
@@ -104,29 +117,26 @@ static void show_current_word(App *app)
 
     app->mode = pick_mode(app, word);
     char *prompt;
-    const char *shown;
     switch (app->mode) {
     case MODE_TYPE:
         prompt = g_strdup_printf("Type out the word in %s:", word->target_language);
-        shown = word->target;
         break;
     case MODE_HEAR_TRANSLATE:
         prompt = g_strdup_printf("Translate what you hear from %s to %s:", word->source_language,
                                  word->target_language);
-        shown = "🔊";
         break;
     case MODE_HEAR_TYPE:
         prompt = g_strdup_printf("Type out the word you hear in %s:", word->target_language);
-        shown = "🔊";
         break;
     default:
         prompt = g_strdup_printf("Translate from %s to %s:", word->source_language,
                                  word->target_language);
-        shown = word->source;
         break;
     }
+    char *shown = shown_text(app->mode, word);
     gtk_label_set_text(GTK_LABEL(app->prompt_label), prompt);
     gtk_label_set_text(GTK_LABEL(app->word_label), shown);
+    g_free(shown);
     gtk_widget_set_sensitive(app->entry, TRUE);
     gtk_editable_set_text(GTK_EDITABLE(app->entry), "");
     gtk_widget_grab_focus(app->entry);
@@ -328,6 +338,24 @@ static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user
     load_paths(app, (const char *const *)paths, count);
     g_strfreev(paths);
     g_object_unref(files);
+}
+
+static void on_script_toggled(GtkCheckButton *check, gpointer user_data)
+{
+    App *app = user_data;
+    if (!gtk_check_button_get_active(check))
+        return;
+
+    gboolean traditional = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(check), "traditional"));
+    settings_set_traditional(app->settings, traditional);
+    word_set_traditional(traditional);
+
+    Word *word = wordlist_current(app->list);
+    if (word == NULL)
+        return;
+    char *shown = shown_text(app->mode, word);
+    gtk_label_set_text(GTK_LABEL(app->word_label), shown);
+    g_free(shown);
 }
 
 static void on_speak_clicked(GtkButton *button, gpointer user_data)
@@ -533,6 +561,7 @@ static App *build_window(GtkApplication *gtk_app)
     app->excluded_target = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     app->progress = progress_new();
     app->settings = settings_new();
+    word_set_traditional(settings_get_traditional(app->settings));
 
     app->window = GTK_WINDOW(gtk_application_window_new(gtk_app));
     gtk_window_set_title(app->window, "yasvt-gui");
@@ -562,6 +591,19 @@ static App *build_window(GtkApplication *gtk_app)
         gtk_check_button_set_active(GTK_CHECK_BUTTON(app->mode_check[i]), TRUE);
         gtk_box_append(GTK_BOX(modes), app->mode_check[i]);
     }
+
+    gtk_box_append(GTK_BOX(modes), gtk_label_new("Chinese characters"));
+    GtkWidget *simplified = gtk_check_button_new_with_label("Simplified");
+    GtkWidget *traditional = gtk_check_button_new_with_label("Traditional");
+    gtk_check_button_set_group(GTK_CHECK_BUTTON(traditional), GTK_CHECK_BUTTON(simplified));
+    g_object_set_data(G_OBJECT(traditional), "traditional", GINT_TO_POINTER(1));
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(settings_get_traditional(app->settings) ? traditional
+                                                                                      : simplified),
+                                TRUE);
+    g_signal_connect(simplified, "toggled", G_CALLBACK(on_script_toggled), app);
+    g_signal_connect(traditional, "toggled", G_CALLBACK(on_script_toggled), app);
+    gtk_box_append(GTK_BOX(modes), simplified);
+    gtk_box_append(GTK_BOX(modes), traditional);
 
     app->prompt_label = gtk_label_new(NULL);
 

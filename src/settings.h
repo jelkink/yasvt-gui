@@ -13,4 +13,8 @@ void settings_free(Settings *settings);
 gboolean settings_is_native(const Settings *settings, const char *language);
 void settings_set_native(Settings *settings, const char *language, gboolean native);
 
+/* Whether Chinese is displayed in traditional rather than simplified characters. */
+gboolean settings_get_traditional(const Settings *settings);
+void settings_set_traditional(Settings *settings, gboolean traditional);
+
 #endif

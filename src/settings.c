@@ -2,6 +2,7 @@
 
 struct Settings {
     GHashTable *native; /* language name set */
+    gboolean traditional;
     char *path;
 };
 
@@ -19,6 +20,7 @@ static void save(const Settings *settings)
     g_key_file_set_string_list(file, "general", "native_languages",
                                (const char *const *)names->pdata, names->len);
     g_ptr_array_free(names, TRUE);
+    g_key_file_set_boolean(file, "general", "traditional", settings->traditional);
 
     char *dir = g_path_get_dirname(settings->path);
     g_mkdir_with_parents(dir, 0700);
@@ -36,8 +38,10 @@ Settings *settings_new(void)
     GKeyFile *file = g_key_file_new();
     gsize length = 0;
     char **names = NULL;
-    if (g_key_file_load_from_file(file, settings->path, G_KEY_FILE_NONE, NULL))
+    if (g_key_file_load_from_file(file, settings->path, G_KEY_FILE_NONE, NULL)) {
         names = g_key_file_get_string_list(file, "general", "native_languages", &length, NULL);
+        settings->traditional = g_key_file_get_boolean(file, "general", "traditional", NULL);
+    }
 
     if (names != NULL) {
         for (gsize i = 0; i < length; i++)
@@ -64,6 +68,17 @@ void settings_free(Settings *settings)
 gboolean settings_is_native(const Settings *settings, const char *language)
 {
     return g_hash_table_contains(settings->native, language);
+}
+
+gboolean settings_get_traditional(const Settings *settings)
+{
+    return settings->traditional;
+}
+
+void settings_set_traditional(Settings *settings, gboolean traditional)
+{
+    settings->traditional = traditional;
+    save(settings);
 }
 
 void settings_set_native(Settings *settings, const char *language, gboolean native)
