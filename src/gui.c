@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 
 #include "gui.h"
+#include "progress.h"
 #include "speech.h"
 #include "wordlist.h"
 
@@ -25,6 +26,7 @@ typedef struct {
     GtkWidget *mode_check[MODE_COUNT];
     Mode mode;
     WordList *list;
+    Progress *progress;
 } App;
 
 static const char *const mode_labels[MODE_COUNT] = {
@@ -144,13 +146,16 @@ static void on_answer(GtkEntry *entry, gpointer user_data)
     if (found == word) {
         feedback = g_strdup_printf("CORRECT! %s", pair);
         word_update_score(word, TRUE);
+        progress_record(app->progress, word, TRUE);
     } else if (found != NULL) {
         feedback = g_strdup_printf("CORRECT! Although I was looking for: %s", pair);
         word_update_score(found, TRUE);
+        progress_record(app->progress, found, TRUE);
     } else {
         feedback = g_strdup_printf("OOPS! %s%s%s", pair, word->note ? "\nNote: " : "",
                                    word->note ? word->note : "");
         word_update_score(word, FALSE);
+        progress_record(app->progress, word, FALSE);
     }
 
     gtk_label_set_text(GTK_LABEL(app->feedback_label), feedback);
@@ -173,7 +178,7 @@ static void load_paths(App *app, const char *const *paths, guint count)
         }
     }
 
-    wordlist_shuffle(app->list);
+    progress_shuffle(app->progress, app->list);
     char *message = g_strdup_printf("Loaded %u words.", app->list->words->len);
     gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
     g_free(message);
@@ -327,6 +332,7 @@ static void app_free(gpointer data)
 {
     App *app = data;
     wordlist_free(app->list);
+    progress_free(app->progress);
     g_free(app);
 }
 
@@ -334,6 +340,7 @@ static App *build_window(GtkApplication *gtk_app)
 {
     App *app = g_new0(App, 1);
     app->list = wordlist_new();
+    app->progress = progress_new();
 
     app->window = GTK_WINDOW(gtk_application_window_new(gtk_app));
     gtk_window_set_title(app->window, "yasvt-gui");

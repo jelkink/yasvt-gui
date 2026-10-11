@@ -11,7 +11,7 @@ CC ?= cc
 PKG_CONFIG ?= pkg-config
 
 CFLAGS  := -Wall -Wextra -O2 $(shell $(PKG_CONFIG) --cflags gtk4)
-LDFLAGS := $(shell $(PKG_CONFIG) --libs gtk4)
+LDFLAGS := $(shell $(PKG_CONFIG) --libs gtk4) -lm
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)
 OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
