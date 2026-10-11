@@ -45,7 +45,7 @@ Files can also be opened from the **Open…** button. Opening files replaces the
 
 ## Vocabulary files
 
-CSV with a header row naming the two languages, then one word per row. An optional third column holds a note shown after a wrong answer.
+CSV with a header row naming the two languages, then one word per row. By default the first column is the language you type and the second is the one you are shown; **Reverse** swaps them. An optional third column holds a note shown after a wrong answer.
 
 ```csv
 Russian,English

@@ -12,7 +12,8 @@ typedef struct {
 WordList *wordlist_new(void);
 void wordlist_free(WordList *list);
 
-/* The first row is a header "source,target[,note]" naming the languages. */
+/* The first row is a header "target,source[,note]" naming the languages: the first column is
+ * what the user types, the second is what is shown (Reverse swaps them). */
 /* Only words number `start`, `start`+1, ... are loaded (1-based, counted after the
  * header); number <= 0 means all words from start on. */
 gboolean wordlist_load_file(WordList *list, const char *path, int start, int number,

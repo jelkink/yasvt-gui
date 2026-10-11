@@ -66,8 +66,8 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
                         "%s, line %u: expected at least two columns", path, i + 1);
             ok = FALSE;
         } else if (source_language == NULL) {
-            source_language = language_name(row[0]);
-            target_language = language_name(row[1]);
+            source_language = language_name(row[1]);
+            target_language = language_name(row[0]);
         } else {
             data_row++;
             if (data_row < start || (number > 0 && data_row >= (gint64)start + number))
@@ -75,7 +75,7 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
 
             const char *note = columns > 2 ? row[2] : NULL;
             g_ptr_array_add(list->words,
-                            word_new(source_language, target_language, row[0], row[1], note));
+                            word_new(source_language, target_language, row[1], row[0], note));
         }
     }
 
