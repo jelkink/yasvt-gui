@@ -295,6 +295,218 @@ static void rebuild_filter_panel(App *app)
     fill_filter_box(app, app->target_box, app->excluded_target, FALSE);
 }
 
+/* Loading several files one by one, stopping to ask for the languages of files whose first row
+ * does not name them. */
+typedef struct {
+    App *app;
+    char **paths;
+    guint index;
+    GtkWidget *dialog; /* the open language question, if any */
+    GtkWidget *target_drop;
+    GtkWidget *source_drop;
+    GtkWidget *header_check;
+} LoadJob;
+
+static void load_next(LoadJob *job);
+static gboolean on_list_key(GtkEventControllerKey *controller, guint keyval, guint keycode,
+                            GdkModifierType state, gpointer user_data);
+
+static void finish_loading(LoadJob *job, const char *error)
+{
+    App *app = job->app;
+    if (error != NULL) {
+        gtk_label_set_text(GTK_LABEL(app->feedback_label), error);
+        rebuild_filter_panel(app);
+        show_score(app);
+        show_current_word(app);
+    } else {
+        progress_register(app->progress, app->all);
+        rebuild_filter_panel(app);
+        char *message = g_strdup_printf("Loaded %u words.", app->all->words->len);
+        gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
+        g_free(message);
+        apply_filter(app);
+    }
+    g_strfreev(job->paths);
+    g_free(job);
+}
+
+static gboolean load_one(LoadJob *job, const char *target, const char *source, gboolean header)
+{
+    GError *error = NULL;
+    if (!wordlist_load_file(job->app->all, job->paths[job->index], range_start, range_number, target,
+                            source, header, &error)) {
+        finish_loading(job, error->message);
+        g_error_free(error);
+        return FALSE;
+    }
+    job->index++;
+    return TRUE;
+}
+
+static void on_languages_cancel(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    gtk_window_destroy(GTK_WINDOW(((LoadJob *)user_data)->dialog));
+}
+
+/* Closing the question without answering cancels the remaining files. */
+static void on_languages_destroyed(GtkWidget *dialog, gpointer user_data)
+{
+    (void)dialog;
+    LoadJob *job = user_data;
+    if (job->dialog == NULL)
+        return;
+    job->dialog = NULL;
+    finish_loading(job, "Loading cancelled.");
+}
+
+static void on_languages_chosen(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    LoadJob *job = user_data;
+    const char *const *names = wordlist_known_languages();
+    const char *target = names[gtk_drop_down_get_selected(GTK_DROP_DOWN(job->target_drop))];
+    const char *source = names[gtk_drop_down_get_selected(GTK_DROP_DOWN(job->source_drop))];
+    gboolean header = gtk_check_button_get_active(GTK_CHECK_BUTTON(job->header_check));
+
+    settings_set_file_languages(job->app->settings, job->paths[job->index], target, source, header);
+    GtkWidget *dialog = job->dialog;
+    job->dialog = NULL;
+    gtk_window_destroy(GTK_WINDOW(dialog));
+    if (load_one(job, target, source, header))
+        load_next(job);
+}
+
+static GtkWidget *language_drop_down(const char *cell)
+{
+    const char *const *names = wordlist_known_languages();
+    guint count = g_strv_length((char **)names);
+    char **labels = g_new0(char *, count + 1);
+    for (guint i = 0; i < count; i++) {
+        labels[i] = g_strdup(names[i]);
+        labels[i][0] = g_ascii_toupper(labels[i][0]);
+    }
+    GtkWidget *drop = gtk_drop_down_new_from_strings((const char *const *)labels);
+    g_strfreev(labels);
+
+    /* A known name in the cell wins, then a guess from the script, then English. */
+    char *lower = g_utf8_strdown(cell, -1);
+    const char *guess = wordlist_is_known_language(cell) ? g_strstrip(lower) : wordlist_guess_language(cell);
+    for (guint i = 0; i < count; i++)
+        if (g_strcmp0(names[i], guess != NULL ? guess : "english") == 0)
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(drop), i);
+    g_free(lower);
+    return drop;
+}
+
+static void ask_languages(LoadJob *job, char **row)
+{
+    const char *first = row[0];
+    const char *second = row[1] != NULL ? row[1] : "";
+    gboolean header = wordlist_is_known_language(first) || wordlist_is_known_language(second) ||
+                      *first == '\0' || *second == '\0';
+
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_widget_set_margin_top(grid, 18);
+    gtk_widget_set_margin_bottom(grid, 18);
+    gtk_widget_set_margin_start(grid, 18);
+    gtk_widget_set_margin_end(grid, 18);
+
+    char *name = g_path_get_basename(job->paths[job->index]);
+    char *text = g_strdup_printf("The first row of %s does not name two known languages:\n\n"
+                                 "%s  |  %s\n\nWhich languages are in the file?",
+                                 name, first, second);
+    GtkWidget *label = gtk_label_new(text);
+    gtk_label_set_wrap(GTK_LABEL(label), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(label), 0);
+    gtk_grid_attach(GTK_GRID(grid), label, 0, 0, 2, 1);
+    g_free(text);
+
+    job->target_drop = language_drop_down(first);
+    job->source_drop = language_drop_down(second);
+    GtkWidget *target_label = gtk_label_new("First column (typed):");
+    GtkWidget *source_label = gtk_label_new("Second column (shown):");
+    gtk_label_set_xalign(GTK_LABEL(target_label), 0);
+    gtk_label_set_xalign(GTK_LABEL(source_label), 0);
+    gtk_grid_attach(GTK_GRID(grid), target_label, 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), job->target_drop, 1, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), source_label, 0, 2, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), job->source_drop, 1, 2, 1, 1);
+
+    job->header_check = gtk_check_button_new_with_label("The first row is a header, not a word");
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(job->header_check), header);
+    gtk_grid_attach(GTK_GRID(grid), job->header_check, 0, 3, 2, 1);
+
+    GtkWidget *note = gtk_label_new("Your choice is remembered for this file.");
+    gtk_widget_add_css_class(note, "dim-label");
+    gtk_label_set_xalign(GTK_LABEL(note), 0);
+    gtk_grid_attach(GTK_GRID(grid), note, 0, 4, 2, 1);
+
+    GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_halign(buttons, GTK_ALIGN_END);
+    GtkWidget *cancel = gtk_button_new_with_label("Cancel");
+    GtkWidget *load = gtk_button_new_with_label("Load");
+    gtk_widget_add_css_class(load, "suggested-action");
+    gtk_box_append(GTK_BOX(buttons), cancel);
+    gtk_box_append(GTK_BOX(buttons), load);
+    gtk_grid_attach(GTK_GRID(grid), buttons, 0, 5, 2, 1);
+
+    job->dialog = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(job->dialog), name);
+    gtk_window_set_transient_for(GTK_WINDOW(job->dialog), job->app->window);
+    gtk_window_set_modal(GTK_WINDOW(job->dialog), TRUE);
+    gtk_window_set_child(GTK_WINDOW(job->dialog), grid);
+    gtk_window_set_default_widget(GTK_WINDOW(job->dialog), load);
+    g_free(name);
+
+    g_signal_connect(cancel, "clicked", G_CALLBACK(on_languages_cancel), job);
+    g_signal_connect(load, "clicked", G_CALLBACK(on_languages_chosen), job);
+    g_signal_connect(job->dialog, "destroy", G_CALLBACK(on_languages_destroyed), job);
+    GtkEventController *keys = gtk_event_controller_key_new();
+    g_signal_connect(keys, "key-pressed", G_CALLBACK(on_list_key), job->dialog);
+    gtk_widget_add_controller(job->dialog, keys);
+
+    gtk_window_present(GTK_WINDOW(job->dialog));
+}
+
+static void load_next(LoadJob *job)
+{
+    while (job->paths[job->index] != NULL) {
+        const char *path = job->paths[job->index];
+        GError *error = NULL;
+        char **row = wordlist_read_first_row(path, &error);
+        if (row == NULL) {
+            finish_loading(job, error->message);
+            g_error_free(error);
+            return;
+        }
+
+        char *target = NULL;
+        char *source = NULL;
+        gboolean header = TRUE;
+        gboolean loaded;
+        if (g_strv_length(row) >= 2 && wordlist_is_known_language(row[0]) &&
+            wordlist_is_known_language(row[1])) {
+            loaded = load_one(job, NULL, NULL, TRUE);
+        } else if (settings_get_file_languages(job->app->settings, path, &target, &source, &header)) {
+            loaded = load_one(job, target, source, header);
+            g_free(target);
+            g_free(source);
+        } else {
+            ask_languages(job, row);
+            g_strfreev(row);
+            return;
+        }
+        g_strfreev(row);
+        if (!loaded)
+            return;
+    }
+    finish_loading(job, NULL);
+}
+
 static void load_paths(App *app, const char *const *paths, guint count)
 {
     g_ptr_array_set_size(app->list->words, 0);
@@ -302,24 +514,12 @@ static void load_paths(App *app, const char *const *paths, guint count)
     g_hash_table_remove_all(app->excluded_source);
     g_hash_table_remove_all(app->excluded_target);
 
-    for (guint i = 0; i < count; i++) {
-        GError *error = NULL;
-        if (!wordlist_load_file(app->all, paths[i], range_start, range_number, &error)) {
-            gtk_label_set_text(GTK_LABEL(app->feedback_label), error->message);
-            g_error_free(error);
-            rebuild_filter_panel(app);
-            show_score(app);
-            show_current_word(app);
-            return;
-        }
-    }
-
-    progress_register(app->progress, app->all);
-    rebuild_filter_panel(app);
-    char *message = g_strdup_printf("Loaded %u words.", app->all->words->len);
-    gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
-    g_free(message);
-    apply_filter(app);
+    LoadJob *job = g_new0(LoadJob, 1);
+    job->app = app;
+    job->paths = g_new0(char *, count + 1);
+    for (guint i = 0; i < count; i++)
+        job->paths[i] = g_strdup(paths[i]);
+    load_next(job);
 }
 
 static void on_files_chosen(GObject *source, GAsyncResult *result, gpointer user_data)

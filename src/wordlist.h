@@ -12,12 +12,30 @@ typedef struct {
 WordList *wordlist_new(void);
 void wordlist_free(WordList *list);
 
-/* The first row is a header "target,source[,note]" naming the languages: the first column is
- * what the user types, the second is what is shown (Reverse swaps them). */
-/* Only words number `start`, `start`+1, ... are loaded (1-based, counted after the
- * header); number <= 0 means all words from start on. */
+/* Files are comma-, semicolon- or tab-separated; blank lines and lines starting with "//" are
+ * skipped. The first column is what the user types, the second what is shown (Reverse swaps them),
+ * an optional third a note. The first row is normally a header "target,source[,note]" naming the
+ * languages. */
+
+/* Whether yasvt knows the language by this name (case-insensitive). */
+gboolean wordlist_is_known_language(const char *name);
+
+/* The known language names, lowercase and sorted, NULL-terminated. */
+const char *const *wordlist_known_languages(void);
+
+/* A language guessed from the script of the text (Han, Cyrillic, ...), or NULL. */
+const char *wordlist_guess_language(const char *text);
+
+/* The cells of the file's first row, to tell whether it is a header; free with g_strfreev(). */
+char **wordlist_read_first_row(const char *path, GError **error);
+
+/* With target_language NULL, the languages are read from the header row. Otherwise they are the
+ * given ones, and header says whether the first row is a header to skip. Only words number
+ * `start`, `start`+1, ... are loaded (1-based, counted after any header); number <= 0 means all
+ * words from start on. */
 gboolean wordlist_load_file(WordList *list, const char *path, int start, int number,
-                            GError **error);
+                            const char *target_language, const char *source_language,
+                            gboolean header, GError **error);
 
 void wordlist_shuffle(WordList *list);
 Word *wordlist_current(const WordList *list);

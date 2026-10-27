@@ -25,7 +25,7 @@ Keep the two kinds of history separate:
 ## Data model
 
 - `app->all` owns every loaded `Word`. `app->list` is the queue: the words passing the language filter, **not owned** (its array has no free function). To delete a word, steal it from the queue and remove it from `app->all`.
-- Languages are lowercase names from the CSV header. The first CSV column is the language the user types (`target`), the second is the one shown (`source`).
+- Languages are lowercase names from the CSV header, or chosen in a dialog when the header does not name two known languages (`wordlist_is_known_language`: the speech languages plus `extra_languages`); the choice is stored per file path in settings.ini. Loading files is therefore asynchronous (`LoadJob` in gui.c). The first CSV column is the language the user types (`target`), the second is the one shown (`source`).
 - Chinese (language exactly `chinese`) is stored as simplified. Typed answers are converted to simplified before comparing; traditional is only a display option (`word_set_traditional`).
 - Progress entries are keyed by an MD5 of both languages and both words, per direction. A word with `last_seen == 0` is registered but still counts as new.
 - Progress is only written by `progress_flush()` (30 s timer, closing the app) and by the editor and registration; `progress_record()` just marks it dirty. Per-word `ease` only affects the persistent interval, never the in-session score.

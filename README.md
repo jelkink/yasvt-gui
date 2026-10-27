@@ -49,7 +49,7 @@ Files can also be opened from the **Open…** button. Opening files replaces the
 
 ## Vocabulary files
 
-CSV with a header row naming the two languages, then one word per row. The delimiter, `,` or `;`, is detected per file. By default the **first** column is the language you type and the **second** is the one you are shown; **Reverse** swaps them. An optional third column holds a note shown after a wrong answer.
+CSV with a header row naming the two languages, then one word per row. The delimiter, `,`, `;` or tab, is detected per file. By default the **first** column is the language you type and the **second** is the one you are shown; **Reverse** swaps them. An optional third column holds a note shown after a wrong answer. Blank lines and lines starting with `//` are ignored.
 
 ```csv
 Russian,English
@@ -58,6 +58,10 @@ Russian,English
 ```
 
 In this example you are shown "maybe" and type "возможно". Answers must match exactly (apart from surrounding spaces). Language names (case-insensitive) decide whether audio and pinyin are available. See [examples/](examples/).
+
+If the first row does not name two known languages (for example a file without a header), the program asks which languages the two columns hold, and whether the first row is a header or already a word. It guesses from the script where it can (Chinese, Russian, Arabic, ...). The answer is remembered for that file.
+
+In tab-separated files, empty fields (from double tabs) are skipped and quotes are ordinary text. Rows of the form word, romanisation, meaning, as exported by Pleco (`愛	ai4{oi3}	love`) or with jyutping, are read as word, meaning, and the romanisation as the note.
 
 ## Progress and word order
 
@@ -87,7 +91,7 @@ Clips are downloaded from Google Translate TTS with `curl` and played with `mpv`
 | Path | Contents |
 |---|---|
 | `~/.local/share/yasvt-gui/progress.txt` | learning progress and the words you have loaded |
-| `~/.config/yasvt-gui/settings.ini` | native languages |
+| `~/.config/yasvt-gui/settings.ini` | native languages, and the languages you chose for files without a header |
 | `~/.cache/yasvt-gui/` | downloaded audio clips (safe to delete) |
 
 ## Development

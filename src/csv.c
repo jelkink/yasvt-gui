@@ -33,7 +33,7 @@ GPtrArray *csv_parse(const char *data, char delimiter)
             } else {
                 g_string_append_c(field, *p);
             }
-        } else if (*p == '"') {
+        } else if (*p == '"' && delimiter != '\t') {
             in_quotes = TRUE;
         } else if (*p == delimiter) {
             end_field(fields, field);

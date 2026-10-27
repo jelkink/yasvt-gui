@@ -17,4 +17,11 @@ void settings_set_native(Settings *settings, const char *language, gboolean nati
 gboolean settings_get_traditional(const Settings *settings);
 void settings_set_traditional(Settings *settings, gboolean traditional);
 
+/* Languages the user chose for a file whose first row does not name them, by path. Returns FALSE
+ * when none were chosen; target and source are then not set, otherwise free them with g_free(). */
+gboolean settings_get_file_languages(const Settings *settings, const char *path, char **target,
+                                     char **source, gboolean *header);
+void settings_set_file_languages(Settings *settings, const char *path, const char *target,
+                                 const char *source, gboolean header);
+
 #endif
