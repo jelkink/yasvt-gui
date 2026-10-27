@@ -6,7 +6,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
 
 ## Features
 
-- Load one or more CSV vocabulary files (comma or semicolon separated) and practise them.
+- Load one or more vocabulary files (comma, semicolon or tab separated), or whole folders of them, and practise them.
 - Four test modes, each switchable on or off in the panel on the right (all modes that are ticked are mixed randomly):
   - **Translate**: see the word, type the translation.
   - **Type the word**: see the word you have to type, and type it out.
@@ -38,14 +38,14 @@ make uninstall                 # remove (use the same PREFIX)
 ## Usage
 
 ```bash
-yasvt-gui [--start N] [--number N] [--new PCT] [FILE...]
+yasvt-gui [--start N] [--number N] [--new PCT] [FILE|FOLDER...]
 ```
 
-- `--start N`, `-s N`: first word to use, counted from 1 (default 1)
-- `--number N`, `-n N`: number of words to use (default: all)
+- `--start N`, `-s N`: first word to use from each file, counted from 1 (default 1)
+- `--number N`, `-n N`: number of words to use from each file (default: all)
 - `--new PCT`, `-N PCT`: share of never-seen words in the initial order, 0 to 100 (default 20)
 
-Files can also be opened from the **Open…** button. Opening files replaces the current word list. Started without files, the program continues with all words from the files you have opened before.
+A folder stands for all vocabulary files (`.csv`, `.tsv`, `.txt`, `.lst`) in it and its subfolders, so a folder can serve as a set of lists to practise together; hidden files and folders are skipped. Files can also be opened with the **Open…** and **Open folder…** buttons. Opening files replaces the current word list. A file that cannot be loaded is skipped, adds no words, and is named in the message. Started without files, the program continues with all words from the files you have opened before.
 
 ## Vocabulary files
 

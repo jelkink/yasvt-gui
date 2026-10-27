@@ -301,6 +301,8 @@ typedef struct {
     App *app;
     char **paths;
     guint index;
+    guint loaded;      /* files loaded */
+    GPtrArray *failed; /* "file: reason" for files skipped */
     GtkWidget *dialog; /* the open language question, if any */
     GtkWidget *target_drop;
     GtkWidget *source_drop;
@@ -311,37 +313,62 @@ static void load_next(LoadJob *job);
 static gboolean on_list_key(GtkEventControllerKey *controller, guint keyval, guint keycode,
                             GdkModifierType state, gpointer user_data);
 
+/* Files that fail are skipped and named in the message; error stops loading altogether. */
 static void finish_loading(LoadJob *job, const char *error)
 {
     App *app = job->app;
-    if (error != NULL) {
-        gtk_label_set_text(GTK_LABEL(app->feedback_label), error);
-        rebuild_filter_panel(app);
-        show_score(app);
-        show_current_word(app);
-    } else {
-        progress_register(app->progress, app->all);
-        rebuild_filter_panel(app);
-        char *message = g_strdup_printf("Loaded %u words.", app->all->words->len);
-        gtk_label_set_text(GTK_LABEL(app->feedback_label), message);
-        g_free(message);
-        apply_filter(app);
+    GString *message = g_string_new(error);
+    if (error == NULL) {
+        g_string_printf(message, "Loaded %u words", app->all->words->len);
+        if (job->loaded > 1)
+            g_string_append_printf(message, " from %u files", job->loaded);
+        g_string_append_c(message, '.');
     }
+    if (job->failed->len > 0) {
+        g_string_append_printf(message, " Could not load %u file%s:", job->failed->len,
+                               job->failed->len == 1 ? "" : "s");
+        for (guint i = 0; i < job->failed->len && i < 3; i++)
+            g_string_append_printf(message, "%s %s", i > 0 ? ";" : "",
+                                   (char *)g_ptr_array_index(job->failed, i));
+        if (job->failed->len > 3)
+            g_string_append(message, "; …");
+    }
+    gtk_label_set_text(GTK_LABEL(app->feedback_label), message->str);
+    g_string_free(message, TRUE);
+
+    progress_register(app->progress, app->all);
+    rebuild_filter_panel(app);
+    apply_filter(app);
     g_strfreev(job->paths);
+    g_ptr_array_unref(job->failed);
     g_free(job);
 }
 
-static gboolean load_one(LoadJob *job, const char *target, const char *source, gboolean header)
+static void load_failed(LoadJob *job, const GError *error)
+{
+    char *name = g_path_get_basename(job->paths[job->index]);
+    /* Messages start with the path, which the name already gives. */
+    const char *reason = error->message;
+    if (g_str_has_prefix(reason, job->paths[job->index])) {
+        reason += strlen(job->paths[job->index]);
+        while (*reason == ':' || *reason == ' ')
+            reason++;
+    }
+    g_ptr_array_add(job->failed, g_strdup_printf("%s (%s)", name, reason));
+    g_free(name);
+}
+
+static void load_one(LoadJob *job, const char *target, const char *source, gboolean header)
 {
     GError *error = NULL;
-    if (!wordlist_load_file(job->app->all, job->paths[job->index], range_start, range_number, target,
-                            source, header, &error)) {
-        finish_loading(job, error->message);
+    if (wordlist_load_file(job->app->all, job->paths[job->index], range_start, range_number, target,
+                           source, header, &error)) {
+        job->loaded++;
+    } else {
+        load_failed(job, error);
         g_error_free(error);
-        return FALSE;
     }
     job->index++;
-    return TRUE;
 }
 
 static void on_languages_cancel(GtkButton *button, gpointer user_data)
@@ -358,7 +385,10 @@ static void on_languages_destroyed(GtkWidget *dialog, gpointer user_data)
     if (job->dialog == NULL)
         return;
     job->dialog = NULL;
-    finish_loading(job, "Loading cancelled.");
+    char *message = g_strdup_printf("Loading cancelled; kept the %u words loaded before.",
+                                    job->app->all->words->len);
+    finish_loading(job, message);
+    g_free(message);
 }
 
 static void on_languages_chosen(GtkButton *button, gpointer user_data)
@@ -374,8 +404,8 @@ static void on_languages_chosen(GtkButton *button, gpointer user_data)
     GtkWidget *dialog = job->dialog;
     job->dialog = NULL;
     gtk_window_destroy(GTK_WINDOW(dialog));
-    if (load_one(job, target, source, header))
-        load_next(job);
+    load_one(job, target, source, header);
+    load_next(job);
 }
 
 static GtkWidget *language_drop_down(const char *cell)
@@ -479,20 +509,20 @@ static void load_next(LoadJob *job)
         GError *error = NULL;
         char **row = wordlist_read_first_row(path, &error);
         if (row == NULL) {
-            finish_loading(job, error->message);
+            load_failed(job, error);
             g_error_free(error);
-            return;
+            job->index++;
+            continue;
         }
 
         char *target = NULL;
         char *source = NULL;
         gboolean header = TRUE;
-        gboolean loaded;
         if (g_strv_length(row) >= 2 && wordlist_is_known_language(row[0]) &&
             wordlist_is_known_language(row[1])) {
-            loaded = load_one(job, NULL, NULL, TRUE);
+            load_one(job, NULL, NULL, TRUE);
         } else if (settings_get_file_languages(job->app->settings, path, &target, &source, &header)) {
-            loaded = load_one(job, target, source, header);
+            load_one(job, target, source, header);
             g_free(target);
             g_free(source);
         } else {
@@ -501,8 +531,6 @@ static void load_next(LoadJob *job)
             return;
         }
         g_strfreev(row);
-        if (!loaded)
-            return;
     }
     finish_loading(job, NULL);
 }
@@ -516,9 +544,12 @@ static void load_paths(App *app, const char *const *paths, guint count)
 
     LoadJob *job = g_new0(LoadJob, 1);
     job->app = app;
-    job->paths = g_new0(char *, count + 1);
-    for (guint i = 0; i < count; i++)
-        job->paths[i] = g_strdup(paths[i]);
+    job->paths = wordlist_expand_paths(paths, count);
+    job->failed = g_ptr_array_new_with_free_func(g_free);
+    if (job->paths[0] == NULL) {
+        finish_loading(job, "No vocabulary files (.csv, .tsv, .txt, .lst) found.");
+        return;
+    }
     load_next(job);
 }
 
@@ -804,6 +835,29 @@ static void on_open_clicked(GtkButton *button, gpointer user_data)
     g_object_unref(dialog);
 }
 
+static void on_folder_chosen(GObject *source, GAsyncResult *result, gpointer user_data)
+{
+    GFile *folder = gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(source), result, NULL);
+    if (folder == NULL)
+        return;
+
+    char *path = g_file_get_path(folder);
+    const char *paths[] = {path};
+    load_paths(user_data, paths, 1);
+    g_free(path);
+    g_object_unref(folder);
+}
+
+static void on_open_folder_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    App *app = user_data;
+    GtkFileDialog *dialog = gtk_file_dialog_new();
+    gtk_file_dialog_set_title(dialog, "Open a folder of vocabulary files");
+    gtk_file_dialog_select_folder(dialog, app->window, NULL, on_folder_chosen, app);
+    g_object_unref(dialog);
+}
+
 static void app_free(gpointer data)
 {
     App *app = data;
@@ -839,8 +893,11 @@ static App *build_window(GtkApplication *gtk_app)
 
     GtkWidget *open_button = gtk_button_new_with_label("Open…");
     g_signal_connect(open_button, "clicked", G_CALLBACK(on_open_clicked), app);
+    GtkWidget *folder_button = gtk_button_new_with_label("Open folder…");
+    g_signal_connect(folder_button, "clicked", G_CALLBACK(on_open_folder_clicked), app);
     GtkWidget *header = gtk_header_bar_new();
     gtk_header_bar_pack_start(GTK_HEADER_BAR(header), open_button);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), folder_button);
     GtkWidget *settings_button = gtk_button_new_with_label("Settings");
     g_signal_connect(settings_button, "clicked", G_CALLBACK(on_settings_clicked), app);
     gtk_header_bar_pack_end(GTK_HEADER_BAR(header), settings_button);

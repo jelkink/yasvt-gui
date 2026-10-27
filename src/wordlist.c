@@ -223,6 +223,7 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
                             gboolean header, GError **error)
 {
     gint64 data_row = 0;
+    guint first_new = list->words->len;
     GPtrArray *rows = read_rows(path, error);
     if (rows == NULL)
         return FALSE;
@@ -262,10 +263,64 @@ gboolean wordlist_load_file(WordList *list, const char *path, int start, int num
         }
     }
 
+    if (!ok)
+        g_ptr_array_remove_range(list->words, first_new, list->words->len - first_new);
     g_free(source);
     g_free(target);
     g_ptr_array_unref(rows);
     return ok;
+}
+
+static gboolean is_vocabulary_name(const char *name)
+{
+    static const char *const extensions[] = {".csv", ".tsv", ".txt", ".lst"};
+    char *lower = g_ascii_strdown(name, -1);
+    gboolean match = FALSE;
+    for (gsize i = 0; i < G_N_ELEMENTS(extensions) && !match; i++)
+        match = g_str_has_suffix(lower, extensions[i]);
+    g_free(lower);
+    return match;
+}
+
+static void add_folder(GPtrArray *files, const char *folder)
+{
+    GDir *dir = g_dir_open(folder, 0, NULL);
+    if (dir == NULL)
+        return;
+
+    GPtrArray *names = g_ptr_array_new_with_free_func(g_free);
+    const char *name;
+    while ((name = g_dir_read_name(dir)) != NULL)
+        if (name[0] != '.')
+            g_ptr_array_add(names, g_strdup(name));
+    g_dir_close(dir);
+    g_ptr_array_sort(names, compare_names);
+
+    for (guint i = 0; i < names->len; i++) {
+        char *path = g_build_filename(folder, g_ptr_array_index(names, i), NULL);
+        if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+            add_folder(files, path);
+            g_free(path);
+        } else if (is_vocabulary_name(g_ptr_array_index(names, i))) {
+            g_ptr_array_add(files, path);
+        } else {
+            g_free(path);
+        }
+    }
+    g_ptr_array_unref(names);
+}
+
+char **wordlist_expand_paths(const char *const *paths, guint count)
+{
+    GPtrArray *files = g_ptr_array_new();
+    for (guint i = 0; i < count; i++) {
+        if (g_file_test(paths[i], G_FILE_TEST_IS_DIR))
+            add_folder(files, paths[i]);
+        else
+            g_ptr_array_add(files, g_strdup(paths[i]));
+    }
+    g_ptr_array_add(files, NULL);
+    return (char **)g_ptr_array_free(files, FALSE);
 }
 
 void wordlist_shuffle(WordList *list)
