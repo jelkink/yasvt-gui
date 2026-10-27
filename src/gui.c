@@ -807,7 +807,7 @@ static void on_stats_clicked(GtkButton *button, gpointer user_data)
     (void)button;
     App *app = user_data;
     progress_flush(app->progress);
-    progress_stats_open(app->window, app->progress);
+    progress_stats_open(app->window, app->progress, app->all);
 }
 
 static gboolean on_save_timer(gpointer user_data)

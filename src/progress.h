@@ -43,8 +43,9 @@ typedef struct {
     ProgressStats stats;
 } ProgressPairStats;
 
-/* Array of ProgressPairStats, sorted by language; free with g_ptr_array_unref(). */
-GPtrArray *progress_pair_stats(const Progress *progress);
+/* Array of ProgressPairStats, sorted by language, over all recorded words, or with `only` over the
+ * words in that list (each counted once); free with g_ptr_array_unref(). */
+GPtrArray *progress_pair_stats(const Progress *progress, const WordList *only);
 
 /* A copy of one progress entry, for the editor. */
 typedef struct {

@@ -79,7 +79,7 @@ The progress file is plain text, one word per line. Deleting it resets all progr
 
 ### Statistics and editing
 
-- **Statistics** shows, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
+- **Statistics** shows, for the words loaded now and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
 - **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
 
 ## Audio

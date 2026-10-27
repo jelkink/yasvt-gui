@@ -357,52 +357,72 @@ static int compare_pair_stats(gconstpointer a, gconstpointer b)
     return order != 0 ? order : g_utf8_collate(x->target_language, y->target_language);
 }
 
-GPtrArray *progress_pair_stats(const Progress *progress)
+static void add_to_stats(GHashTable *pairs, GPtrArray *result, const Entry *entry, gint64 now,
+                         gint64 today)
+{
+    char *pair_key = g_strdup_printf("%s\x1f%s", entry->source_language, entry->target_language);
+    ProgressPairStats *pair = g_hash_table_lookup(pairs, pair_key);
+
+    if (pair == NULL) {
+        pair = g_new0(ProgressPairStats, 1);
+        pair->source_language = g_intern_string(entry->source_language);
+        pair->target_language = g_intern_string(entry->target_language);
+        g_hash_table_insert(pairs, pair_key, pair);
+        g_ptr_array_add(result, pair);
+    } else {
+        g_free(pair_key);
+    }
+
+    ProgressStats *stats = &pair->stats;
+    stats->total++;
+    if (entry->last_seen == 0) {
+        stats->fresh++;
+        return;
+    }
+
+    int correct = 0;
+    for (int i = 0; i < 8; i++)
+        correct += (entry->history >> i) & 1;
+
+    stats->answered++;
+    stats->accuracy += correct / 8.0; /* divided by the answered count below */
+    if (entry->interval < KNOWN_INTERVAL_DAYS)
+        stats->learning++;
+    else
+        stats->known++;
+    if ((double)(now - entry->last_seen) / SECONDS_PER_DAY >= entry->interval)
+        stats->due++;
+    if (entry->last_seen >= today)
+        stats->today++;
+}
+
+GPtrArray *progress_pair_stats(const Progress *progress, const WordList *only)
 {
     GPtrArray *result = g_ptr_array_new_with_free_func(g_free);
     GHashTable *pairs = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     gint64 now = g_get_real_time() / G_USEC_PER_SEC;
     gint64 today = start_of_today();
-    GHashTableIter iter;
-    gpointer value;
 
-    g_hash_table_iter_init(&iter, progress->entries);
-    while (g_hash_table_iter_next(&iter, NULL, &value)) {
-        const Entry *entry = value;
-        char *pair_key = g_strdup_printf("%s\x1f%s", entry->source_language, entry->target_language);
-        ProgressPairStats *pair = g_hash_table_lookup(pairs, pair_key);
-
-        if (pair == NULL) {
-            pair = g_new0(ProgressPairStats, 1);
-            pair->source_language = g_intern_string(entry->source_language);
-            pair->target_language = g_intern_string(entry->target_language);
-            g_hash_table_insert(pairs, pair_key, pair);
-            g_ptr_array_add(result, pair);
-        } else {
-            g_free(pair_key);
+    if (only == NULL) {
+        GHashTableIter iter;
+        gpointer value;
+        g_hash_table_iter_init(&iter, progress->entries);
+        while (g_hash_table_iter_next(&iter, NULL, &value))
+            add_to_stats(pairs, result, value, now, today);
+    } else {
+        /* The same word may be loaded from several files; count it once. */
+        GHashTable *seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+        for (guint i = 0; i < only->words->len; i++) {
+            char *key = word_key(g_ptr_array_index(only->words, i));
+            const Entry *entry = g_hash_table_lookup(progress->entries, key);
+            if (entry == NULL || g_hash_table_contains(seen, key)) {
+                g_free(key);
+                continue;
+            }
+            g_hash_table_add(seen, key);
+            add_to_stats(pairs, result, entry, now, today);
         }
-
-        ProgressStats *stats = &pair->stats;
-        stats->total++;
-        if (entry->last_seen == 0) {
-            stats->fresh++;
-            continue;
-        }
-
-        int correct = 0;
-        for (int i = 0; i < 8; i++)
-            correct += (entry->history >> i) & 1;
-
-        stats->answered++;
-        stats->accuracy += correct / 8.0; /* divided by the answered count below */
-        if (entry->interval < KNOWN_INTERVAL_DAYS)
-            stats->learning++;
-        else
-            stats->known++;
-        if ((double)(now - entry->last_seen) / SECONDS_PER_DAY >= entry->interval)
-            stats->due++;
-        if (entry->last_seen >= today)
-            stats->today++;
+        g_hash_table_unref(seen);
     }
 
     for (guint i = 0; i < result->len; i++) {

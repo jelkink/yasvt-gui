@@ -64,9 +64,53 @@ static void add_stats_row(GtkWidget *grid, int row, const char *name, const Prog
     }
 }
 
-void progress_stats_open(GtkWindow *parent, const Progress *progress)
+static GtkWidget *stats_grid(const GPtrArray *pairs)
 {
-    GPtrArray *pairs = progress_pair_stats(progress);
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 18);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+
+    const char *headers[] = {"Shown \u2192 typed", "Words", "New", "Learning", "Known", "Due",
+                             "Today", "Accuracy"};
+    for (int i = 0; i < 8; i++)
+        add_cell(grid, headers[i], i, 0, TRUE);
+
+    ProgressStats total = {0};
+    double accuracy_sum = 0.0;
+    for (guint i = 0; i < pairs->len; i++) {
+        const ProgressPairStats *pair = g_ptr_array_index(pairs, i);
+        char *name = g_strdup_printf("%s \u2192 %s", pair->source_language, pair->target_language);
+        add_stats_row(grid, (int)i + 1, name, &pair->stats, FALSE);
+        g_free(name);
+
+        total.total += pair->stats.total;
+        total.fresh += pair->stats.fresh;
+        total.learning += pair->stats.learning;
+        total.known += pair->stats.known;
+        total.due += pair->stats.due;
+        total.today += pair->stats.today;
+        total.answered += pair->stats.answered;
+        accuracy_sum += pair->stats.accuracy * pair->stats.answered;
+    }
+
+    if (pairs->len > 1) {
+        total.accuracy = total.answered > 0 ? accuracy_sum / total.answered : 0.0;
+        add_stats_row(grid, (int)pairs->len + 1, "Total", &total, TRUE);
+    }
+    return grid;
+}
+
+static void add_heading(GtkWidget *box, const char *text)
+{
+    GtkWidget *label = gtk_label_new(text);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_add_css_class(label, "heading");
+    gtk_box_append(GTK_BOX(box), label);
+}
+
+void progress_stats_open(GtkWindow *parent, const Progress *progress, const WordList *loaded)
+{
+    GPtrArray *pairs = progress_pair_stats(progress, NULL);
 
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     gtk_widget_set_margin_top(box, 18);
@@ -77,41 +121,18 @@ void progress_stats_open(GtkWindow *parent, const Progress *progress)
     if (pairs->len == 0) {
         gtk_box_append(GTK_BOX(box), gtk_label_new("No progress recorded yet. Open a vocabulary file to start."));
     } else {
-        GtkWidget *grid = gtk_grid_new();
-        gtk_grid_set_column_spacing(GTK_GRID(grid), 18);
-        gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
-
-        const char *headers[] = {"Shown \u2192 typed", "Words", "New", "Learning", "Known", "Due",
-                                 "Today", "Accuracy"};
-        for (int i = 0; i < 8; i++)
-            add_cell(grid, headers[i], i, 0, TRUE);
-
-        ProgressStats total = {0};
-        double accuracy_sum = 0.0;
-        for (guint i = 0; i < pairs->len; i++) {
-            const ProgressPairStats *pair = g_ptr_array_index(pairs, i);
-            char *name = g_strdup_printf("%s \u2192 %s", pair->source_language, pair->target_language);
-            add_stats_row(grid, (int)i + 1, name, &pair->stats, FALSE);
-            g_free(name);
-
-            total.total += pair->stats.total;
-            total.fresh += pair->stats.fresh;
-            total.learning += pair->stats.learning;
-            total.known += pair->stats.known;
-            total.due += pair->stats.due;
-            total.today += pair->stats.today;
-            total.answered += pair->stats.answered;
-            accuracy_sum += pair->stats.accuracy * pair->stats.answered;
+        GPtrArray *loaded_pairs = progress_pair_stats(progress, loaded);
+        if (loaded_pairs->len > 0) {
+            add_heading(box, "Loaded words");
+            gtk_box_append(GTK_BOX(box), stats_grid(loaded_pairs));
         }
-
-        if (pairs->len > 1) {
-            total.accuracy = total.answered > 0 ? accuracy_sum / total.answered : 0.0;
-            add_stats_row(grid, (int)pairs->len + 1, "Total", &total, TRUE);
-        }
-        gtk_box_append(GTK_BOX(box), grid);
+        g_ptr_array_unref(loaded_pairs);
+        add_heading(box, "All words in your progress");
+        gtk_box_append(GTK_BOX(box), stats_grid(pairs));
     }
 
-    GtkWidget *legend = gtk_label_new("New: never answered. Learning: answered, review interval under 8 days. "
+    GtkWidget *legend = gtk_label_new("Loaded words: the words loaded now, in their current direction. "
+                                      "New: never answered. Learning: answered, review interval under 8 days. "
                                       "Known: interval of 8 days or more. Due: ready to be reviewed again. "
                                       "Today: answered today. Accuracy: share correct of the last 8 answers.");
     gtk_label_set_wrap(GTK_LABEL(legend), TRUE);

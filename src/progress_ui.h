@@ -12,7 +12,8 @@ typedef struct {
     gpointer data;
 } ProgressEditorHooks;
 
-void progress_stats_open(GtkWindow *parent, const Progress *progress);
+/* Shows statistics for the loaded words and for all words in the progress file. */
+void progress_stats_open(GtkWindow *parent, const Progress *progress, const WordList *loaded);
 void progress_editor_open(GtkWindow *parent, Progress *progress, const ProgressEditorHooks *hooks);
 
 #endif
