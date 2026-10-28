@@ -142,8 +142,26 @@ void progress_stats_open(GtkWindow *parent, const Progress *progress, const Word
     gtk_box_append(GTK_BOX(box), legend);
     g_ptr_array_unref(pairs);
 
+    /* Natural size when it fits, otherwise scroll within most of the screen height. */
+    int max_height = 600;
+    GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(parent));
+    GdkMonitor *monitor = surface != NULL
+                              ? gdk_display_get_monitor_at_surface(gdk_surface_get_display(surface), surface)
+                              : NULL;
+    if (monitor != NULL) {
+        GdkRectangle geometry;
+        gdk_monitor_get_geometry(monitor, &geometry);
+        max_height = geometry.height * 4 / 5;
+    }
+    GtkWidget *scrolled = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_width(GTK_SCROLLED_WINDOW(scrolled), TRUE);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scrolled), TRUE);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scrolled), max_height);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), box);
+
     GtkWidget *window = new_window(parent, "Statistics", 0, 0);
-    gtk_window_set_child(GTK_WINDOW(window), box);
+    gtk_window_set_child(GTK_WINDOW(window), scrolled);
     gtk_window_present(GTK_WINDOW(window));
 }
 
