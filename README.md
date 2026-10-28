@@ -40,12 +40,16 @@ make uninstall                 # remove (use the same PREFIX)
 ## Usage
 
 ```bash
-yasvt-gui [--start N] [--number N] [--new PCT] [FILE|FOLDER...]
+yasvt-gui [--start N] [--number N] [--reverse PCT] [--other PCT] [--new PCT] [FILE|FOLDER...]
 ```
 
 - `--start N`, `-s N`: first word to use from each file, counted from 1 (default 1)
 - `--number N`, `-n N`: number of words to use from each file (default: all)
-- `--new PCT`, `-N PCT`: share of never-seen words in the initial order, 0 to 100 (default 20)
+- `--reverse PCT`, `-R PCT`: share of words practised only in the other direction in the initial order (default 25)
+- `--other PCT`, `-O PCT`: share of words practised only with another language in the initial order (default 20)
+- `--new PCT`, `-N PCT`: share of never-seen words in the initial order (default 25)
+
+The three shares are percentages that together may not exceed 100; words practised in their own direction take the rest (30% by default). See [Progress and word order](#progress-and-word-order).
 
 A folder stands for all vocabulary files (`.csv`, `.tsv`, `.txt`, `.lst`) in it and its subfolders, so a folder can serve as a set of lists to practise together; hidden files and folders are skipped. Files can also be opened with the **Open…** and **Open folder…** buttons. Opening files replaces the current word list. A file that cannot be loaded is skipped, adds no words, and is named in the message. Started without files, the program continues with all words from the files you have opened before.
 
@@ -71,8 +75,13 @@ Every word you open is recorded in `~/.local/share/yasvt-gui/progress.txt`, toge
 
 This record only decides the **initial order** after opening a file, starting without a file, or pressing **Reverse** or changing the language filter:
 
-- Words you have practised come first when they are poorly known or due again; well-known words that were seen recently go to the back. The interval before a word is due grows after a correct answer (at most once a day, up to a year) by a per-word ease factor that starts at 2 and drops for words that keep going wrong, so difficult words are reviewed more often. A wrong answer resets the interval to a day. Some randomness keeps the order from being predictable.
-- Words you have never answered are mixed in at a fixed rate, 20% by default (`--new`).
+- The words are split into four groups, in order of priority:
+  1. **Practised**: answered before in this direction.
+  2. **Reverse**: only answered in the opposite direction (Esperanto→English *domo / house* after English→Esperanto *house / domo*).
+  3. **Other language**: only the same word with another language was answered (Russian→Esperanto *дом / domo* after English→Esperanto *house / domo*).
+  4. **New**: none of its words was ever answered, in any direction or language pair.
+- The groups are mixed at fixed rates: by default 30% practised, 25% reverse, 20% other language and 25% new (`--reverse`, `--other`, `--new`). When a group runs out, the next group in priority order fills in.
+- Within the practised group, words come first when they are poorly known or due again; well-known words that were seen recently go to the back. The interval before a word is due grows after a correct answer (at most once a day, up to a year) by a per-word ease factor that starts at 2 and drops for words that keep going wrong, so difficult words are reviewed more often. A wrong answer resets the interval to a day. In the reverse and other-language groups, words come sooner the worse you know the related word. New words come in random order. Some randomness keeps the order from being predictable.
 - **Shuffle** ignores the record and shuffles completely at random.
 
 After that, the order during the session follows the in-session score: a word you answer comes back later when it is well known and sooner when it is not. The in-session score starts from zero for every run, and **Reverse** resets it.

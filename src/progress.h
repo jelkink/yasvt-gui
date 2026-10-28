@@ -26,9 +26,20 @@ void progress_register(Progress *progress, const WordList *list);
 /* Appends every word with recorded progress to the list; returns how many. */
 guint progress_load_words(const Progress *progress, WordList *list);
 
-/* Initial order: words already practised, most due and least known first, with never-seen
- * words mixed in at rate `new_fraction` (0..1). */
-void progress_shuffle(const Progress *progress, WordList *list, double new_fraction);
+/* Groups of the initial order, in priority order. */
+typedef enum {
+    PROGRESS_PRACTISED, /* answered in this direction */
+    PROGRESS_REVERSE,   /* only answered in the opposite direction */
+    PROGRESS_OTHER,     /* only shares a text with a word answered in another pair or direction */
+    PROGRESS_NEW,       /* none of its texts was ever answered */
+    PROGRESS_GROUP_COUNT,
+} ProgressGroup;
+
+/* Initial order: each group is ordered by itself, most due and least known first (new words at
+ * random), and the groups are mixed at rates `fractions` (0..1). The practised group's own
+ * fraction is ignored: it takes what the others leave. */
+void progress_shuffle(const Progress *progress, WordList *list,
+                      const double fractions[PROGRESS_GROUP_COUNT]);
 
 /* Counts per language pair. Words never answered are "new"; answered words are "learning" until
  * their review interval reaches 8 days, then "known"; "due" words are ready for review again. */

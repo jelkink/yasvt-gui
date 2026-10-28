@@ -20,6 +20,7 @@ Keep the two kinds of history separate:
 
 - **In-session score** (`Word.history`): starts at 0 every run and drives the queue. Never seed it from saved progress.
 - **Persistent progress** (`src/progress.c`, `progress.txt`): only used for the *initial* order after opening a file, starting without a file, **Reverse**, or a filter change. It must never influence the order once the session is running.
+- That initial order (`progress_shuffle`) mixes four groups at fixed rates (`--reverse`, `--other`, `--new`; practised takes the rest): practised in this direction, practised only in the reverse direction, sharing a text with an answered entry in another pair (`practised_texts`), and new.
 - **Shuffle** is a plain random shuffle (`wordlist_shuffle`). It must not use progress.
 
 ## Data model

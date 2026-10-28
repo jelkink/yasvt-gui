@@ -9,7 +9,9 @@
 
 static int range_start = 1;
 static int range_number = -1;
-static int new_percent = 20;
+static int reverse_percent = 25;
+static int other_percent = 20;
+static int new_percent = 25;
 
 typedef enum {
     MODE_TRANSLATE,
@@ -348,7 +350,12 @@ static void apply_filter(App *app)
         if (passes_filter(app, word))
             g_ptr_array_add(app->list->words, word);
     }
-    progress_shuffle(app->progress, app->list, new_percent / 100.0);
+    const double fractions[PROGRESS_GROUP_COUNT] = {
+        [PROGRESS_REVERSE] = reverse_percent / 100.0,
+        [PROGRESS_OTHER] = other_percent / 100.0,
+        [PROGRESS_NEW] = new_percent / 100.0,
+    };
+    progress_shuffle(app->progress, app->list, fractions);
     show_score(app);
     show_current_word(app);
 }
@@ -1192,10 +1199,13 @@ static gint on_local_options(GApplication *gtk_app, GVariantDict *options, gpoin
     (void)user_data;
     g_variant_dict_lookup(options, "start", "i", &range_start);
     g_variant_dict_lookup(options, "number", "i", &range_number);
+    g_variant_dict_lookup(options, "reverse", "i", &reverse_percent);
+    g_variant_dict_lookup(options, "other", "i", &other_percent);
     g_variant_dict_lookup(options, "new", "i", &new_percent);
 
-    if (new_percent < 0 || new_percent > 100) {
-        g_printerr("--new must be between 0 and 100\n");
+    if (reverse_percent < 0 || other_percent < 0 || new_percent < 0 ||
+        reverse_percent + other_percent + new_percent > 100) {
+        g_printerr("--reverse, --other and --new must be at least 0 and add up to at most 100\n");
         return 1;
     }
     if (range_start < 1) {
@@ -1212,7 +1222,11 @@ int gui_run(int argc, char **argv)
     const GOptionEntry entries[] = {
         {"start", 's', 0, G_OPTION_ARG_INT, NULL, "First word to use, counted from 1 (default 1)", "N"},
         {"number", 'n', 0, G_OPTION_ARG_INT, NULL, "Number of words to use (default: all)", "N"},
-        {"new", 'N', 0, G_OPTION_ARG_INT, NULL, "Percentage of new words in the initial order (default 20)", "PCT"},
+        {"reverse", 'R', 0, G_OPTION_ARG_INT, NULL,
+         "Percentage of words practised only in the other direction in the initial order (default 25)", "PCT"},
+        {"other", 'O', 0, G_OPTION_ARG_INT, NULL,
+         "Percentage of words practised only with another language in the initial order (default 20)", "PCT"},
+        {"new", 'N', 0, G_OPTION_ARG_INT, NULL, "Percentage of new words in the initial order (default 25)", "PCT"},
         {NULL, 0, 0, 0, NULL, NULL, NULL},
     };
     g_application_add_main_option_entries(G_APPLICATION(app), entries);

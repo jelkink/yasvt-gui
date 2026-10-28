@@ -88,13 +88,19 @@ static char *unescape(const char *text)
     return g_string_free(out, FALSE);
 }
 
-static char *word_key(const Word *word)
+static char *key_for(const char *source_language, const char *target_language, const char *source,
+                     const char *target)
 {
-    char *text = g_strdup_printf("%s\x1f%s\x1f%s\x1f%s", word->source_language,
-                                 word->target_language, word->source, word->target);
+    char *text = g_strdup_printf("%s\x1f%s\x1f%s\x1f%s", source_language, target_language, source,
+                                 target);
     char *key = g_compute_checksum_for_string(G_CHECKSUM_MD5, text, -1);
     g_free(text);
     return key;
+}
+
+static char *word_key(const Word *word)
+{
+    return key_for(word->source_language, word->target_language, word->source, word->target);
 }
 
 static void load(Progress *progress)
@@ -232,16 +238,82 @@ static const Entry *find_entry(const Progress *progress, const Word *word)
     return entry;
 }
 
-static double weight(const Entry *entry)
+static double accuracy(const Entry *entry)
 {
     int correct = 0;
     for (int i = 0; i < 8; i++)
         correct += (entry->history >> i) & 1;
+    return correct / 8.0;
+}
 
+static double weight(const Entry *entry)
+{
     double days = (double)(g_get_real_time() / G_USEC_PER_SEC - entry->last_seen) / SECONDS_PER_DAY;
     double due = MIN(1.0, MAX(days, 0.0) / entry->interval);
-    double result = ((1.0 - correct / 8.0) + due) / 2.0;
+    double result = ((1.0 - accuracy(entry)) + due) / 2.0;
     return MAX(result, MIN_WEIGHT);
+}
+
+/* The weight of a word never answered itself, from a related word that was: due now, and higher
+ * the worse the related word is known. */
+static double unanswered_weight(const Entry *related)
+{
+    return ((1.0 - accuracy(related)) + 1.0) / 2.0;
+}
+
+static char *text_key(const char *language, const char *text)
+{
+    return g_strconcat(language, "\x1f", text, NULL);
+}
+
+static void add_practised_text(GHashTable *texts, const char *language, const char *text, double w)
+{
+    char *key = text_key(language, text);
+    double *best = g_hash_table_lookup(texts, key);
+    if (best == NULL) {
+        best = g_new(double, 1);
+        *best = w;
+        g_hash_table_insert(texts, key, best);
+        return;
+    }
+    *best = MAX(*best, w);
+    g_free(key);
+}
+
+/* Every text, per language, of the words answered in any direction, with the highest
+ * unanswered_weight() among the entries that have it. */
+static GHashTable *practised_texts(const Progress *progress)
+{
+    GHashTable *texts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+    GHashTableIter iter;
+    gpointer value;
+
+    g_hash_table_iter_init(&iter, progress->entries);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        const Entry *entry = value;
+        if (entry->last_seen == 0)
+            continue;
+        double w = unanswered_weight(entry);
+        add_practised_text(texts, entry->source_language, entry->source, w);
+        add_practised_text(texts, entry->target_language, entry->target, w);
+    }
+    return texts;
+}
+
+/* The weight of a word never answered itself, or 0 when none of its texts was practised. */
+static double related_weight(GHashTable *texts, const Word *word)
+{
+    double result = 0.0;
+    const char *languages[2] = {word->source_language, word->target_language};
+    const char *words[2] = {word->source, word->target};
+    for (int i = 0; i < 2; i++) {
+        char *key = text_key(languages[i], words[i]);
+        const double *w = g_hash_table_lookup(texts, key);
+        if (w != NULL)
+            result = MAX(result, *w);
+        g_free(key);
+    }
+    return result;
 }
 
 typedef struct {
@@ -289,47 +361,80 @@ guint progress_load_words(const Progress *progress, WordList *list)
     return g_hash_table_size(progress->entries);
 }
 
-void progress_shuffle(const Progress *progress, WordList *list, double new_fraction)
+static gboolean is_answered(const Entry *entry)
+{
+    return entry != NULL && entry->last_seen != 0;
+}
+
+void progress_shuffle(const Progress *progress, WordList *list,
+                      const double fractions[PROGRESS_GROUP_COUNT])
 {
     guint count = list->words->len;
-    Keyed *seen = g_new(Keyed, count);
-    Word **fresh = g_new(Word *, count);
-    guint seen_count = 0;
-    guint fresh_count = 0;
+    Keyed *groups[PROGRESS_GROUP_COUNT];
+    guint sizes[PROGRESS_GROUP_COUNT] = {0};
+    guint next[PROGRESS_GROUP_COUNT] = {0};
+    for (int g = 0; g < PROGRESS_GROUP_COUNT; g++)
+        groups[g] = g_new(Keyed, count);
+    GHashTable *texts = practised_texts(progress);
 
     for (guint i = 0; i < count; i++) {
         Word *word = g_ptr_array_index(list->words, i);
         const Entry *entry = find_entry(progress, word);
-        if (entry == NULL || entry->last_seen == 0) {
-            fresh[fresh_count++] = word;
-            continue;
+        int group;
+        double w;
+        if (is_answered(entry)) {
+            group = PROGRESS_PRACTISED;
+            w = weight(entry);
+        } else {
+            char *key = key_for(word->target_language, word->source_language, word->target,
+                                word->source);
+            const Entry *reverse = g_hash_table_lookup(progress->entries, key);
+            g_free(key);
+            if (is_answered(reverse)) {
+                group = PROGRESS_REVERSE;
+                w = unanswered_weight(reverse);
+            } else if ((w = related_weight(texts, word)) > 0.0) {
+                group = PROGRESS_OTHER;
+            } else {
+                group = PROGRESS_NEW;
+                w = 1.0;
+            }
         }
-        /* Weighted random order (Efraimidis-Spirakis) with jitter on the weights. */
-        double w = weight(entry) * g_random_double_range(0.5, 1.5);
-        seen[seen_count].word = word;
-        seen[seen_count].key = pow(g_random_double(), 1.0 / w);
-        seen_count++;
+        /* Weighted random order (Efraimidis-Spirakis) with jitter on the weights; new words all
+         * weigh the same, so they end up in plain random order. */
+        w *= g_random_double_range(0.5, 1.5);
+        groups[group][sizes[group]].word = word;
+        groups[group][sizes[group]].key = pow(g_random_double(), 1.0 / w);
+        sizes[group]++;
     }
+    g_hash_table_unref(texts);
 
-    qsort(seen, seen_count, sizeof(Keyed), compare_keys_descending);
-    for (guint i = fresh_count; i > 1; i--) {
-        guint j = (guint)g_random_int_range(0, (gint)i);
-        Word *tmp = fresh[i - 1];
-        fresh[i - 1] = fresh[j];
-        fresh[j] = tmp;
-    }
+    for (int g = 0; g < PROGRESS_GROUP_COUNT; g++)
+        qsort(groups[g], sizes[g], sizeof(Keyed), compare_keys_descending);
 
-    /* New words are spread through the list at the requested rate. */
-    guint next_seen = 0;
-    guint next_fresh = 0;
+    /* The groups are mixed at the requested rates; practised words take what the others leave.
+     * When the chosen group has run out, the first group in priority order that has words left
+     * is used. */
     for (guint out = 0; out < count; out++) {
-        gboolean take_fresh = next_fresh < fresh_count &&
-                              (next_seen >= seen_count || g_random_double() < new_fraction);
-        list->words->pdata[out] = take_fresh ? fresh[next_fresh++] : seen[next_seen++].word;
+        double r = g_random_double();
+        int group = PROGRESS_PRACTISED;
+        for (int g = PROGRESS_REVERSE; g < PROGRESS_GROUP_COUNT; g++) {
+            if (r < fractions[g]) {
+                group = g;
+                break;
+            }
+            r -= fractions[g];
+        }
+        if (next[group] >= sizes[group]) {
+            group = 0;
+            while (next[group] >= sizes[group])
+                group++;
+        }
+        list->words->pdata[out] = groups[group][next[group]++].word;
     }
 
-    g_free(seen);
-    g_free(fresh);
+    for (int g = 0; g < PROGRESS_GROUP_COUNT; g++)
+        g_free(groups[g]);
 }
 
 void progress_flush(Progress *progress)
