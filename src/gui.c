@@ -614,6 +614,7 @@ static void on_reverse_clicked(GtkButton *button, gpointer user_data)
     GHashTable *swap = app->excluded_source;
     app->excluded_source = app->excluded_target;
     app->excluded_target = swap;
+    progress_register(app->progress, app->all);
     rebuild_filter_panel(app);
     apply_filter(app);
 }

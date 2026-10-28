@@ -65,7 +65,7 @@ In tab-separated files, empty fields (from double tabs) are skipped and quotes a
 
 ## Progress and word order
 
-Every word you open is recorded in `~/.local/share/yasvt-gui/progress.txt`, together with your last 8 results for it, when you last answered it, and how many days it takes to become due again. The record is separate for each direction (for example Russian→English and English→Russian). It is saved every 30 seconds and when you close the program.
+Every word you open is recorded in `~/.local/share/yasvt-gui/progress.txt`, together with your last 8 results for it, when you last answered it, and how many days it takes to become due again. The record is separate for each direction (for example Russian→English and English→Russian); pressing **Reverse** records the loaded words in the other direction too, so that both directions are available when you start without a file. It is saved every 30 seconds and when you close the program.
 
 This record only decides the **initial order** after opening a file, starting without a file, or pressing **Reverse** or changing the language filter:
 
