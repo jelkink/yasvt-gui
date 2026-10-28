@@ -365,10 +365,8 @@ Word *wordlist_check(const WordList *list, const char *asked, const char *answer
         if (strcmp(word->source, asked) != 0)
             continue;
 
-        char *normalized = word_normalize_answer(word->target_language, answer);
-        if (strcmp(word->target, normalized) == 0)
+        if (word_answer_matches(word, answer))
             found = word;
-        g_free(normalized);
     }
     return found;
 }

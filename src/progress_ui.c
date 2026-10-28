@@ -131,7 +131,8 @@ void progress_stats_open(GtkWindow *parent, const Progress *progress, const Word
         gtk_box_append(GTK_BOX(box), stats_grid(pairs));
     }
 
-    GtkWidget *legend = gtk_label_new("Loaded words: the words loaded now, in their current direction. "
+    GtkWidget *legend = gtk_label_new("Loaded words: the words loaded now that pass the language filter, "
+                                      "in their current direction. "
                                       "New: never answered. Learning: answered, review interval under 8 days. "
                                       "Known: interval of 8 days or more. Due: ready to be reviewed again. "
                                       "Today: answered today. Accuracy: share correct of the last 8 answers.");

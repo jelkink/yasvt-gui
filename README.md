@@ -18,6 +18,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
 - Spoken words (English, Russian, Chinese, Cantonese, Italian, Arabic, Dutch, Latin, Indonesian, French, German, Spanish, Portuguese, Japanese, Korean, Turkish, Polish, Hindi, Greek, Swedish) via Google TTS, cached locally. The word is read out after every answer, except for your native languages (default English and Dutch), which you can change under **Settings**.
 - Pinyin shown automatically for Chinese words.
 - Chinese is stored as simplified characters, so files may freely mix simplified and traditional. Use the **Chinese characters** switch on the right to display simplified or traditional (remembered between sessions). Typed answers are accepted in either script.
+- Arabic answers are accepted with or without vowel marks (harakat, shadda, sukun), whether or not the word in the file has them. The word is still shown with the marks the file gives it.
 - Buttons: **Speak** (play the current word), **Reverse**, **Shuffle**, **Print list** (with scores), **Clear score** (current word), **Delete word** (for this run only).
 
 ## Requirements
@@ -80,7 +81,7 @@ The progress file is plain text, one word per line. Deleting it resets all progr
 
 ### Statistics and editing
 
-- **Statistics** shows, for the words loaded now and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
+- **Statistics** shows, for the words loaded now that pass the language filter and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
 - **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
 
 ## Audio

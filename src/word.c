@@ -23,9 +23,40 @@ static char *normalize_for(const char *language, const char *text)
     return simplified;
 }
 
-char *word_normalize_answer(const char *language, const char *text)
+/* Arabic vowel signs, shadda, sukun, Quranic annotation marks, superscript alef and tatweel. */
+static gboolean is_arabic_diacritic(gunichar c)
 {
-    return normalize_for(language, text);
+    return (c >= 0x0610 && c <= 0x061A) || (c >= 0x064B && c <= 0x065F) || c == 0x0670 ||
+           (c >= 0x06D6 && c <= 0x06ED) || c == 0x0640;
+}
+
+/* Expects NFC text, so that letters such as alef with madda stay one character and are kept. */
+static char *strip_arabic_diacritics(const char *text)
+{
+    GString *result = g_string_sized_new(strlen(text));
+    for (const char *p = text; *p != '\0'; p = g_utf8_next_char(p)) {
+        gunichar c = g_utf8_get_char(p);
+        if (!is_arabic_diacritic(c))
+            g_string_append_unichar(result, c);
+    }
+    return g_string_free(result, FALSE);
+}
+
+gboolean word_answer_matches(const Word *word, const char *answer)
+{
+    char *normalized = normalize_for(word->target_language, answer);
+    gboolean matches;
+    if (strcmp(word->target_language, "arabic") == 0) {
+        char *expected = strip_arabic_diacritics(word->target);
+        char *given = strip_arabic_diacritics(normalized);
+        matches = strcmp(expected, given) == 0;
+        g_free(given);
+        g_free(expected);
+    } else {
+        matches = strcmp(word->target, normalized) == 0;
+    }
+    g_free(normalized);
+    return matches;
 }
 
 void word_set_traditional(gboolean traditional)

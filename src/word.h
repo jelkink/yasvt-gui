@@ -27,12 +27,14 @@ double word_average_score(const Word *word);
 char *word_format_source(const Word *word);
 char *word_format_target(const Word *word);
 
-/* Chinese text is stored as simplified characters; these convert for display, and a typed
- * answer in `language` to the stored form. */
+/* Chinese text is stored as simplified characters; these convert it for display. */
 void word_set_traditional(gboolean traditional);
 char *word_display_source(const Word *word);
 char *word_display_target(const Word *word);
-char *word_normalize_answer(const char *language, const char *text);
+
+/* Whether a typed answer is the word's target. A Chinese answer may be simplified or traditional;
+ * Arabic vowel marks are ignored on both sides. */
+gboolean word_answer_matches(const Word *word, const char *answer);
 
 /* Swaps source and target, keeping the score history. */
 void word_reverse(Word *word);
