@@ -12,6 +12,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
   - **Type the word**: see the word you have to type, and type it out.
   - **Hear and translate**: hear the shown word, type the translation.
   - **Hear and type**: hear the word you have to type, and type it out.
+- Above the word, flags show the direction (shown language → typed language) and a coloured badge shows the test mode: green for **Translate**, blue for **Type the word**, orange for **Hear and translate**, red for **Hear and type**. The flag of the language to type is also shown next to the answer field. A language without a flag in `data/flags/` gets its first two letters instead.
 - Language filter in the panel on the left: choose which shown and which typed languages to practise, several at once. By default nothing is filtered.
 - Progress is remembered between sessions (see [Progress and word order](#progress-and-word-order)). Without opening a file, the program continues with every word you have loaded before.
 - Spoken words (English, Russian, Chinese, Cantonese, Italian, Arabic, Dutch, Latin, Indonesian, French, German, Spanish, Portuguese, Japanese, Korean, Turkish, Polish, Hindi, Greek, Swedish) via Google TTS, cached locally. The word is read out after every answer, except for your native languages (default English and Dutch), which you can change under **Settings**.
@@ -22,7 +23,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
 ## Requirements
 
 - A C compiler, `make`, `pkg-config`
-- GTK 4 development files
+- GTK 4.22 or newer, with development files
 - `curl` and `mpv` (only for audio)
 
 ## Build and install

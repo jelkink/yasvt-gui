@@ -21,8 +21,15 @@ typedef enum {
 
 typedef struct {
     GtkWindow *window;
+    GtkWidget *direction_box;
+    GtkWidget *source_flag;
+    GtkWidget *target_flag;
+    GtkWidget *mode_badge;
+    GtkWidget *mode_icon[2];
+    GtkWidget *mode_name;
     GtkWidget *prompt_label;
     GtkWidget *word_label;
+    GtkWidget *entry_flag;
     GtkWidget *entry;
     GtkWidget *feedback_label;
     GtkWidget *score_label;
@@ -42,6 +49,86 @@ typedef struct {
 static const char *const mode_labels[MODE_COUNT] = {
     "Translate", "Type the word", "Hear and translate", "Hear and type",
 };
+
+/* The coloured badge for each mode: CSS class and up to two icons. */
+static const struct {
+    const char *css_class;
+    const char *icons[2];
+} mode_badges[MODE_COUNT] = {
+    {"mode-translate", {"accessories-dictionary-symbolic", NULL}},
+    {"mode-type", {"input-keyboard-symbolic", NULL}},
+    {"mode-hear-translate", {"audio-volume-high-symbolic", "accessories-dictionary-symbolic"}},
+    {"mode-hear-type", {"audio-volume-high-symbolic", "input-keyboard-symbolic"}},
+};
+
+static const char *const style_sheet =
+    ".mode-badge { border-radius: 12px; padding: 8px 16px; color: white; }"
+    ".mode-badge label { font-size: 1.4em; font-weight: bold; }"
+    ".mode-translate { background-color: #26a269; }"
+    ".mode-type { background-color: #1c71d8; }"
+    ".mode-hear-translate { background-color: #c64600; }"
+    ".mode-hear-type { background-color: #c01c28; }"
+    ".flag-fallback { background-color: alpha(currentColor, 0.15); border-radius: 6px;"
+    "  font-weight: bold; }"
+    ".prompt { font-size: 1.2em; }"
+    ".answer { font-size: 1.6em; }"
+    ".feedback { font-size: 1.3em; }"
+    ".score { font-size: 1.15em; }";
+
+/* The language name as shown to the user: "esperanto" becomes "Esperanto". */
+static char *language_title(const char *language)
+{
+    gunichar first = g_unichar_totitle(g_utf8_get_char(language));
+    char buffer[8] = {0};
+    g_unichar_to_utf8(first, buffer);
+    return g_strconcat(buffer, g_utf8_next_char(language), NULL);
+}
+
+static GtkWidget *flag_new(int width)
+{
+    GtkWidget *holder = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_valign(holder, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(holder), "width", GINT_TO_POINTER(width));
+    return holder;
+}
+
+/* Shows the flag from data/flags for a language, or its first two letters when there is none. */
+static void flag_set(GtkWidget *holder, const char *language)
+{
+    GtkWidget *child = gtk_widget_get_first_child(holder);
+    if (child != NULL)
+        gtk_box_remove(GTK_BOX(holder), child);
+
+    static GHashTable *flags; /* resource path -> GtkSvg, or absent when there is no flag */
+    if (flags == NULL)
+        flags = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_object_unref);
+
+    int width = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(holder), "width"));
+    char *path = g_strdup_printf("/yasvt-gui/flags/%s.svg", language);
+    GtkSvg *svg = g_hash_table_lookup(flags, path);
+    if (svg == NULL && g_resources_get_info(path, G_RESOURCE_LOOKUP_FLAGS_NONE, NULL, NULL, NULL)) {
+        svg = gtk_svg_new_from_resource(path);
+        g_hash_table_insert(flags, g_strdup(path), svg);
+    }
+    if (svg != NULL) {
+        child = gtk_image_new_from_paintable(GDK_PAINTABLE(svg));
+        gtk_image_set_pixel_size(GTK_IMAGE(child), width);
+    } else {
+        char *letters = g_utf8_substring(language, 0, 2);
+        char *code = g_utf8_strup(letters, -1);
+        child = gtk_label_new(code);
+        gtk_widget_add_css_class(child, "flag-fallback");
+        gtk_widget_set_size_request(child, width, width * 3 / 4);
+        g_free(code);
+        g_free(letters);
+    }
+    g_free(path);
+
+    char *title = language_title(language);
+    gtk_widget_set_tooltip_text(child, title);
+    g_free(title);
+    gtk_box_append(GTK_BOX(holder), child);
+}
 
 /* Speaks the target word in "hear and type" mode, otherwise the source word. */
 static void speak_current(App *app, gboolean replace)
@@ -113,28 +200,53 @@ static void show_current_word(App *app)
                            app->all->words->len > 0 ? "No words match the language filter"
                                                     : "Open a vocabulary file to start");
         gtk_label_set_text(GTK_LABEL(app->word_label), "");
+        gtk_widget_set_visible(app->direction_box, FALSE);
+        gtk_widget_set_visible(app->entry_flag, FALSE);
+        gtk_entry_set_placeholder_text(GTK_ENTRY(app->entry), NULL);
         gtk_widget_set_sensitive(app->entry, FALSE);
         return;
     }
 
     app->mode = pick_mode(app, word);
+    char *source = language_title(word->source_language);
+    char *target = language_title(word->target_language);
     char *prompt;
     switch (app->mode) {
     case MODE_TYPE:
-        prompt = g_strdup_printf("Type out the word in %s:", word->target_language);
+        prompt = g_strdup_printf("Type out the word in %s:", target);
         break;
     case MODE_HEAR_TRANSLATE:
-        prompt = g_strdup_printf("Translate what you hear from %s to %s:", word->source_language,
-                                 word->target_language);
+        prompt = g_strdup_printf("Translate what you hear from %s to %s:", source, target);
         break;
     case MODE_HEAR_TYPE:
-        prompt = g_strdup_printf("Type out the word you hear in %s:", word->target_language);
+        prompt = g_strdup_printf("Type out the word you hear in %s:", target);
         break;
     default:
-        prompt = g_strdup_printf("Translate from %s to %s:", word->source_language,
-                                 word->target_language);
+        prompt = g_strdup_printf("Translate from %s to %s:", source, target);
         break;
     }
+
+    /* The direction and the kind of exercise, readable at a glance. */
+    flag_set(app->source_flag, word->source_language);
+    flag_set(app->target_flag, word->target_language);
+    flag_set(app->entry_flag, word->target_language);
+    for (int i = 0; i < MODE_COUNT; i++)
+        gtk_widget_remove_css_class(app->mode_badge, mode_badges[i].css_class);
+    gtk_widget_add_css_class(app->mode_badge, mode_badges[app->mode].css_class);
+    for (int i = 0; i < 2; i++) {
+        const char *icon = mode_badges[app->mode].icons[i];
+        gtk_widget_set_visible(app->mode_icon[i], icon != NULL);
+        if (icon != NULL)
+            gtk_image_set_from_icon_name(GTK_IMAGE(app->mode_icon[i]), icon);
+    }
+    gtk_label_set_text(GTK_LABEL(app->mode_name), mode_labels[app->mode]);
+    gtk_widget_set_visible(app->direction_box, TRUE);
+    gtk_widget_set_visible(app->entry_flag, TRUE);
+
+    char *placeholder = g_strdup_printf("Type in %s and press Enter", target);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(app->entry), placeholder);
+    g_free(placeholder);
+
     char *shown = shown_text(app->mode, word);
     gtk_label_set_text(GTK_LABEL(app->prompt_label), prompt);
     gtk_label_set_text(GTK_LABEL(app->word_label), shown);
@@ -143,6 +255,8 @@ static void show_current_word(App *app)
     gtk_editable_set_text(GTK_EDITABLE(app->entry), "");
     gtk_widget_grab_focus(app->entry);
     g_free(prompt);
+    g_free(target);
+    g_free(source);
 
     if (app->mode == MODE_HEAR_TRANSLATE || app->mode == MODE_HEAR_TYPE)
         speak_current(app, FALSE);
@@ -887,6 +1001,12 @@ static App *build_window(GtkApplication *gtk_app)
     app->settings = settings_new();
     word_set_traditional(settings_get_traditional(app->settings));
 
+    GtkCssProvider *css = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(css, style_sheet);
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(css);
+
     app->window = GTK_WINDOW(gtk_application_window_new(gtk_app));
     gtk_window_set_title(app->window, "yasvt-gui");
     gtk_window_set_default_size(app->window, 640, 360);
@@ -938,7 +1058,31 @@ static App *build_window(GtkApplication *gtk_app)
     gtk_box_append(GTK_BOX(modes), simplified);
     gtk_box_append(GTK_BOX(modes), traditional);
 
+    /* Shown flag → typed flag, and a coloured badge for the kind of exercise. */
+    app->source_flag = flag_new(72);
+    app->target_flag = flag_new(72);
+    GtkWidget *arrow = gtk_image_new_from_icon_name("go-next-symbolic");
+    gtk_image_set_pixel_size(GTK_IMAGE(arrow), 32);
+    app->mode_badge = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(app->mode_badge, "mode-badge");
+    gtk_widget_set_valign(app->mode_badge, GTK_ALIGN_CENTER);
+    for (int i = 0; i < 2; i++) {
+        app->mode_icon[i] = gtk_image_new();
+        gtk_image_set_pixel_size(GTK_IMAGE(app->mode_icon[i]), 32);
+        gtk_box_append(GTK_BOX(app->mode_badge), app->mode_icon[i]);
+    }
+    app->mode_name = gtk_label_new(NULL);
+    gtk_box_append(GTK_BOX(app->mode_badge), app->mode_name);
+    app->direction_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_halign(app->direction_box, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(app->direction_box), app->source_flag);
+    gtk_box_append(GTK_BOX(app->direction_box), arrow);
+    gtk_box_append(GTK_BOX(app->direction_box), app->target_flag);
+    gtk_widget_set_margin_start(app->mode_badge, 24);
+    gtk_box_append(GTK_BOX(app->direction_box), app->mode_badge);
+
     app->prompt_label = gtk_label_new(NULL);
+    gtk_widget_add_css_class(app->prompt_label, "prompt");
 
     app->word_label = gtk_label_new(NULL);
     gtk_widget_set_vexpand(app->word_label, TRUE);
@@ -949,13 +1093,21 @@ static App *build_window(GtkApplication *gtk_app)
     gtk_label_set_attributes(GTK_LABEL(app->word_label), attrs);
     pango_attr_list_unref(attrs);
 
+    /* The typed language's flag next to where you type. */
+    app->entry_flag = flag_new(44);
     app->entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(app->entry), "Type the translation and press Enter");
+    gtk_widget_add_css_class(app->entry, "answer");
+    gtk_widget_set_hexpand(app->entry, TRUE);
     g_signal_connect(app->entry, "activate", G_CALLBACK(on_answer), app);
+    GtkWidget *answer_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_box_append(GTK_BOX(answer_row), app->entry_flag);
+    gtk_box_append(GTK_BOX(answer_row), app->entry);
 
     app->feedback_label = gtk_label_new(NULL);
     gtk_label_set_wrap(GTK_LABEL(app->feedback_label), TRUE);
+    gtk_widget_add_css_class(app->feedback_label, "feedback");
     app->score_label = gtk_label_new(NULL);
+    gtk_widget_add_css_class(app->score_label, "score");
 
     GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_widget_set_halign(buttons, GTK_ALIGN_CENTER);
@@ -966,9 +1118,10 @@ static App *build_window(GtkApplication *gtk_app)
     add_button(buttons, "Clear score", G_CALLBACK(on_clear_clicked), app);
     add_button(buttons, "Delete word", G_CALLBACK(on_delete_clicked), app);
 
+    gtk_box_append(GTK_BOX(box), app->direction_box);
     gtk_box_append(GTK_BOX(box), app->prompt_label);
     gtk_box_append(GTK_BOX(box), app->word_label);
-    gtk_box_append(GTK_BOX(box), app->entry);
+    gtk_box_append(GTK_BOX(box), answer_row);
     gtk_box_append(GTK_BOX(box), app->feedback_label);
     gtk_box_append(GTK_BOX(box), app->score_label);
     gtk_box_append(GTK_BOX(box), buttons);

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+  <!-- Athena's owl in the style of the Athenian tetradrachm, red-figure colours. -->
+  <rect width="640" height="480" fill="#1c1410"/>
+  <g fill="#d2733a">
+    <!-- olive sprig and crescent, top left -->
+    <path d="M70 150 C110 120 150 100 200 92" fill="none" stroke="#d2733a" stroke-width="7" stroke-linecap="round"/>
+    <ellipse cx="105" cy="112" rx="24" ry="9" transform="rotate(-50 105 112)"/>
+    <ellipse cx="140" cy="96" rx="24" ry="9" transform="rotate(-35 140 96)"/>
+    <ellipse cx="128" cy="138" rx="24" ry="9" transform="rotate(20 128 138)"/>
+    <ellipse cx="170" cy="120" rx="24" ry="9" transform="rotate(30 170 120)"/>
+    <path d="M80 210 A44 44 0 1 0 150 250 A34 34 0 1 1 80 210 Z"/>
+
+    <!-- body -->
+    <path d="M250 200 C230 260 236 340 268 390 L388 390 C420 340 426 260 406 200 Z"/>
+    <!-- head with ear tufts -->
+    <path d="M236 110 L262 140 C290 128 366 128 394 140 L420 110 L424 196 C410 236 246 236 232 196 Z"/>
+    <!-- feet and ground line -->
+    <rect x="236" y="400" width="184" height="10" rx="5"/>
+    <path d="M290 390 l-8 12 h10 l4 -8 l4 8 h10 l-8 -12 Z M350 390 l-8 12 h10 l4 -8 l4 8 h10 l-8 -12 Z"/>
+  </g>
+  <g fill="#1c1410">
+    <!-- eyes -->
+    <circle cx="290" cy="172" r="34"/>
+    <circle cx="366" cy="172" r="34"/>
+  </g>
+  <g fill="#f1d9b0">
+    <circle cx="290" cy="172" r="24"/>
+    <circle cx="366" cy="172" r="24"/>
+  </g>
+  <g fill="#1c1410">
+    <circle cx="290" cy="172" r="11"/>
+    <circle cx="366" cy="172" r="11"/>
+    <!-- beak -->
+    <path d="M318 196 L338 196 L328 224 Z"/>
+    <!-- wing outlines and breast feathers -->
+    <path d="M262 236 C248 290 258 350 286 384 C270 340 268 290 280 244 Z"/>
+    <path d="M394 236 C408 290 398 350 370 384 C386 340 388 290 376 244 Z"/>
+    <path d="M304 262 q12 12 24 0 q12 12 24 0" fill="none" stroke="#1c1410" stroke-width="6" stroke-linecap="round"/>
+    <path d="M304 298 q12 12 24 0 q12 12 24 0" fill="none" stroke="#1c1410" stroke-width="6" stroke-linecap="round"/>
+    <path d="M304 334 q12 12 24 0 q12 12 24 0" fill="none" stroke="#1c1410" stroke-width="6" stroke-linecap="round"/>
+  </g>
+
+  <!-- ΑΘΕ, drawn as strokes so no font is needed -->
+  <g fill="none" stroke="#d2733a" stroke-width="16" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M468 250 L496 160 L524 250 M480 214 H512"/>
+    <ellipse cx="496" cy="300" rx="28" ry="34"/>
+    <path d="M482 300 H510"/>
+    <path d="M524 360 H470 V440 H524 M470 400 H512"/>
+  </g>
+</svg>

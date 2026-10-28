@@ -14,7 +14,10 @@ CFLAGS  := -Wall -Wextra -O2 $(shell $(PKG_CONFIG) --cflags gtk4)
 LDFLAGS := $(shell $(PKG_CONFIG) --libs gtk4) -lm
 
 SRCS := $(wildcard $(SRC_DIR)/*.c)
-OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+OBJS := $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o) $(BUILD_DIR)/resources.o
+
+# Flags are compiled into the program as resources under /yasvt-gui/flags/.
+FLAGS := $(wildcard data/flags/*.svg)
 
 .PHONY: all run clean install uninstall
 
@@ -25,6 +28,17 @@ $(BUILD_DIR)/$(TARGET): $(OBJS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -MMD -c $< -o $@
+
+$(BUILD_DIR)/resources.xml: $(FLAGS) Makefile | $(BUILD_DIR)
+	{ printf '<?xml version="1.0" encoding="UTF-8"?>\n<gresources>\n  <gresource prefix="/yasvt-gui">\n'; \
+	  for f in $(FLAGS:data/%=%); do printf '    <file>%s</file>\n' "$$f"; done; \
+	  printf '  </gresource>\n</gresources>\n'; } > $@
+
+$(BUILD_DIR)/resources.c: $(BUILD_DIR)/resources.xml
+	glib-compile-resources --sourcedir=data --generate-source --target=$@ $<
+
+$(BUILD_DIR)/resources.o: $(BUILD_DIR)/resources.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR):
 	mkdir -p $@
