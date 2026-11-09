@@ -42,7 +42,7 @@ static gboolean is_comment(const char *line)
 {
     while (*line == ' ' || *line == '\t')
         line++;
-    return g_str_has_prefix(line, "//");
+    return g_str_has_prefix(line, "//") || *line == '#';
 }
 
 /* A tab on the first line that is not blank or a comment makes the file tab-separated; otherwise

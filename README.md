@@ -55,7 +55,7 @@ A folder stands for all vocabulary files (`.csv`, `.tsv`, `.txt`, `.lst`) in it 
 
 ## Vocabulary files
 
-CSV with a header row naming the two languages, then one word per row. The delimiter, `,`, `;` or tab, is detected per file. By default the **first** column is the language you type and the **second** is the one you are shown; **Reverse** swaps them. An optional third column holds a note shown after a wrong answer. Blank lines and lines starting with `//` are ignored.
+CSV with a header row naming the two languages, then one word per row. The delimiter, `,`, `;` or tab, is detected per file. By default the **first** column is the language you type and the **second** is the one you are shown; **Reverse** swaps them. An optional third column holds a note shown after a wrong answer. Blank lines and lines starting with `//` or `#` are ignored.
 
 ```csv
 Russian,English
