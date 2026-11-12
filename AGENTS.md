@@ -22,6 +22,7 @@ Keep the two kinds of history separate:
 - **Persistent progress** (`src/progress.c`, `progress.txt`): only used for the *initial* order after opening a file, starting without a file, **Reverse**, or a filter change. It must never influence the order once the session is running.
 - That initial order (`progress_shuffle`) mixes four groups at fixed rates (`--reverse`, `--other`, `--new`; practised takes the rest): practised in this direction, practised only in the reverse direction, sharing a text with an answered entry in another pair (`practised_texts`), and new.
 - Bumped entries (editor **Bump**, `progress_bump`), and entries sharing a text with them, go first in their group of that initial order. In the session, Bump only moves the word to the head of the queue.
+- Progress entries also keep a history per skill (reading or listening, `ProgressSkill`), recorded with each answer. It only biases which test mode `pick_mode()` chooses, never the order.
 - **Shuffle** is a plain random shuffle (`wordlist_shuffle`). It must not use progress.
 
 ## Data model

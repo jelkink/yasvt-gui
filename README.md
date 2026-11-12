@@ -7,7 +7,7 @@ While lead by Jos Dornschneider-Elkink, the code is written by AI.
 ## Features
 
 - Load one or more vocabulary files (comma, semicolon or tab separated), or whole folders of them, and practise them.
-- Four test modes, each switchable on or off in the panel on the right (all modes that are ticked are mixed randomly):
+- Four test modes, each switchable on or off in the panel on the right (all modes that are ticked are mixed randomly, see [Reading and listening](#reading-and-listening)):
   - **Translate**: see the word, type the translation.
   - **Type the word**: see the word you have to type, and type it out.
   - **Hear and translate**: hear the shown word, type the translation.
@@ -89,9 +89,13 @@ After that, the order during the session follows the in-session score: a word yo
 
 The progress file is plain text, one word per line. Deleting it resets all progress.
 
+### Reading and listening
+
+Besides the overall record, each word keeps your last 8 results separately for **reading** (the word is shown: **Translate**, **Type the word**) and **listening** (the word is heard: **Hear and translate**, **Hear and type**). When a word comes up, the mode is chosen at random among the ticked ones, but the skill you know worse for that word comes up more often, and a skill you have never practised for it the most. Two equally known skills come up equally often.
+
 ### Statistics and editing
 
-- **Statistics** shows, for the words loaded now that pass the language filter and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
+- **Statistics** shows, for the words loaded now that pass the language filter and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers, overall and separately for reading and listening.
 - **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Bump** a word to make it the current word right away (adding it to the session if it is not loaded and passes the language filter) and to put it early in the next sessions (see above), **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
 
 ## Audio

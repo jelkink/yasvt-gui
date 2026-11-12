@@ -13,8 +13,20 @@ typedef struct Progress Progress;
 Progress *progress_new(void);
 void progress_free(Progress *progress);
 
+/* What an answer practised: reading a shown word, or listening to it. */
+typedef enum {
+    PROGRESS_SKILL_READING,   /* Translate, Type the word */
+    PROGRESS_SKILL_LISTENING, /* Hear and translate, Hear and type */
+    PROGRESS_SKILL_COUNT,
+} ProgressSkill;
+
 /* Records an answer. Saved by progress_flush(), which the caller runs now and then. */
-void progress_record(Progress *progress, const Word *word, gboolean correct);
+void progress_record(Progress *progress, const Word *word, ProgressSkill skill, gboolean correct);
+
+/* The share correct of the word's last (up to 8) answers in the skill; FALSE when it was never
+ * answered in that skill. */
+gboolean progress_skill_accuracy(const Progress *progress, const Word *word, ProgressSkill skill,
+                                 double *accuracy);
 
 /* Writes the progress file if there are unsaved answers. */
 void progress_flush(Progress *progress);
@@ -46,6 +58,8 @@ void progress_shuffle(const Progress *progress, WordList *list,
 typedef struct {
     guint total, fresh, learning, known, due, today, answered;
     double accuracy; /* mean share correct of the last 8 answers, over answered words */
+    guint skill_answered[PROGRESS_SKILL_COUNT];  /* words answered in the skill */
+    double skill_accuracy[PROGRESS_SKILL_COUNT]; /* mean share correct in the skill over those */
 } ProgressStats;
 
 typedef struct {
@@ -67,6 +81,8 @@ typedef struct {
     char *target;
     char *note; /* may be NULL */
     guint8 history;
+    guint8 skill_history[PROGRESS_SKILL_COUNT];
+    guint8 skill_count[PROGRESS_SKILL_COUNT]; /* answers in skill_history, at most 8 */
     gint64 last_seen; /* 0 when never answered */
     double interval;
     double ease;

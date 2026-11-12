@@ -163,10 +163,20 @@ static gboolean audible(const App *app, const char *language)
     return speech_has_language(language) && !settings_is_native(app->settings, language);
 }
 
+static ProgressSkill mode_skill(Mode mode)
+{
+    return mode == MODE_HEAR_TRANSLATE || mode == MODE_HEAR_TYPE ? PROGRESS_SKILL_LISTENING
+                                                                 : PROGRESS_SKILL_READING;
+}
+
+/* A random enabled mode. Each mode weighs more the worse the word is known in its skill (reading
+ * or listening) across sessions, a skill never practised weighing the most; the weight is shared
+ * among the skill's modes, so that equally known skills come up equally often. */
 static Mode pick_mode(const App *app, const Word *word)
 {
     Mode candidates[MODE_COUNT];
     int count = 0;
+    int per_skill[PROGRESS_SKILL_COUNT] = {0};
 
     for (int i = 0; i < MODE_COUNT; i++) {
         if (!gtk_check_button_get_active(GTK_CHECK_BUTTON(app->mode_check[i])))
@@ -176,8 +186,27 @@ static Mode pick_mode(const App *app, const Word *word)
         if (i == MODE_HEAR_TYPE && !audible(app, word->target_language))
             continue;
         candidates[count++] = (Mode)i;
+        per_skill[mode_skill(i)]++;
     }
-    return count == 0 ? MODE_TRANSLATE : candidates[g_random_int_range(0, count)];
+    if (count == 0)
+        return MODE_TRANSLATE;
+
+    double weights[MODE_COUNT];
+    double total = 0.0;
+    for (int i = 0; i < count; i++) {
+        ProgressSkill skill = mode_skill(candidates[i]);
+        double accuracy = 0.0;
+        progress_skill_accuracy(app->progress, word, skill, &accuracy);
+        weights[i] = (0.25 + (1.0 - accuracy)) / per_skill[skill];
+        total += weights[i];
+    }
+    double r = g_random_double() * total;
+    for (int i = 0; i < count - 1; i++) {
+        if (r < weights[i])
+            return candidates[i];
+        r -= weights[i];
+    }
+    return candidates[count - 1];
 }
 
 static char *shown_text(Mode mode, const Word *word)
@@ -312,18 +341,18 @@ static void on_answer(GtkEntry *entry, gpointer user_data)
     if (found == word) {
         feedback = g_strdup_printf("CORRECT! %s", pair);
         word_update_score(word, TRUE);
-        progress_record(app->progress, word, TRUE);
+        progress_record(app->progress, word, mode_skill(app->mode), TRUE);
         speak_answer(app, word, TRUE);
     } else if (found != NULL) {
         feedback = g_strdup_printf("CORRECT! Although I was looking for: %s", pair);
         word_update_score(found, TRUE);
-        progress_record(app->progress, found, TRUE);
+        progress_record(app->progress, found, mode_skill(app->mode), TRUE);
         speak_answer(app, found, TRUE);
     } else {
         feedback = g_strdup_printf("OOPS! %s%s%s", pair, word->note ? "\nNote: " : "",
                                    word->note ? word->note : "");
         word_update_score(word, FALSE);
-        progress_record(app->progress, word, FALSE);
+        progress_record(app->progress, word, mode_skill(app->mode), FALSE);
         speak_answer(app, word, FALSE);
     }
 

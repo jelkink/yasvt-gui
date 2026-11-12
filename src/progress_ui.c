@@ -47,7 +47,7 @@ static void add_cell(GtkWidget *grid, const char *text, int column, int row, gbo
 static void add_stats_row(GtkWidget *grid, int row, const char *name, const ProgressStats *stats,
                           gboolean bold)
 {
-    char *numbers[7];
+    char *numbers[9];
     numbers[0] = g_strdup_printf("%u", stats->total);
     numbers[1] = g_strdup_printf("%u", stats->fresh);
     numbers[2] = g_strdup_printf("%u", stats->learning);
@@ -56,9 +56,13 @@ static void add_stats_row(GtkWidget *grid, int row, const char *name, const Prog
     numbers[5] = g_strdup_printf("%u", stats->today);
     numbers[6] = stats->answered > 0 ? g_strdup_printf("%.0f%%", stats->accuracy * 100.0)
                                      : g_strdup("-");
+    for (int s = 0; s < PROGRESS_SKILL_COUNT; s++)
+        numbers[7 + s] = stats->skill_answered[s] > 0
+                             ? g_strdup_printf("%.0f%%", stats->skill_accuracy[s] * 100.0)
+                             : g_strdup("-");
 
     add_cell(grid, name, 0, row, bold);
-    for (int i = 0; i < 7; i++) {
+    for (int i = 0; i < 9; i++) {
         add_cell(grid, numbers[i], i + 1, row, bold);
         g_free(numbers[i]);
     }
@@ -71,12 +75,13 @@ static GtkWidget *stats_grid(const GPtrArray *pairs)
     gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
 
     const char *headers[] = {"Shown \u2192 typed", "Words", "New", "Learning", "Known", "Due",
-                             "Today", "Accuracy"};
-    for (int i = 0; i < 8; i++)
+                             "Today", "Accuracy", "Reading", "Listening"};
+    for (int i = 0; i < 10; i++)
         add_cell(grid, headers[i], i, 0, TRUE);
 
     ProgressStats total = {0};
     double accuracy_sum = 0.0;
+    double skill_sum[PROGRESS_SKILL_COUNT] = {0};
     for (guint i = 0; i < pairs->len; i++) {
         const ProgressPairStats *pair = g_ptr_array_index(pairs, i);
         char *name = g_strdup_printf("%s \u2192 %s", pair->source_language, pair->target_language);
@@ -91,10 +96,16 @@ static GtkWidget *stats_grid(const GPtrArray *pairs)
         total.today += pair->stats.today;
         total.answered += pair->stats.answered;
         accuracy_sum += pair->stats.accuracy * pair->stats.answered;
+        for (int s = 0; s < PROGRESS_SKILL_COUNT; s++) {
+            total.skill_answered[s] += pair->stats.skill_answered[s];
+            skill_sum[s] += pair->stats.skill_accuracy[s] * pair->stats.skill_answered[s];
+        }
     }
 
     if (pairs->len > 1) {
         total.accuracy = total.answered > 0 ? accuracy_sum / total.answered : 0.0;
+        for (int s = 0; s < PROGRESS_SKILL_COUNT; s++)
+            total.skill_accuracy[s] = total.skill_answered[s] > 0 ? skill_sum[s] / total.skill_answered[s] : 0.0;
         add_stats_row(grid, (int)pairs->len + 1, "Total", &total, TRUE);
     }
     return grid;
@@ -135,7 +146,11 @@ void progress_stats_open(GtkWindow *parent, const Progress *progress, const Word
                                       "in their current direction. "
                                       "New: never answered. Learning: answered, review interval under 8 days. "
                                       "Known: interval of 8 days or more. Due: ready to be reviewed again. "
-                                      "Today: answered today. Accuracy: share correct of the last 8 answers.");
+                                      "Today: answered today. Accuracy: share correct of the last 8 answers. "
+                                      "Reading and Listening: share correct of the last 8 answers "
+                                      "with the word shown (Translate, Type the word) or heard "
+                                      "(Hear and translate, Hear and type), over the words answered "
+                                      "that way.");
     gtk_label_set_wrap(GTK_LABEL(legend), TRUE);
     gtk_label_set_max_width_chars(GTK_LABEL(legend), 70);
     gtk_label_set_xalign(GTK_LABEL(legend), 0.0f);
@@ -189,6 +204,15 @@ static void row_free(gpointer data)
     g_free(row);
 }
 
+static char *skill_text(const ProgressItem *item, ProgressSkill skill)
+{
+    int correct = 0;
+    for (int i = 0; i < item->skill_count[skill]; i++)
+        correct += (item->skill_history[skill] >> i) & 1;
+    return item->skill_count[skill] > 0 ? g_strdup_printf("%d/%d", correct, item->skill_count[skill])
+                                        : g_strdup("-");
+}
+
 static char *info_text(const ProgressItem *item)
 {
     if (item->last_seen == 0)
@@ -200,8 +224,13 @@ static char *info_text(const ProgressItem *item)
 
     double days_left = item->interval - (double)(g_get_real_time() / G_USEC_PER_SEC - item->last_seen) / SECONDS_PER_DAY;
     char *due = days_left <= 0.0 ? g_strdup("due") : g_strdup_printf("due in %.0f d", ceil(days_left));
-    char *text = g_strdup_printf("%d/8 correct, interval %.0f d, ease %.2f, %s%s", correct,
-                                 item->interval, item->ease, due, item->bump > 0 ? ", bumped" : "");
+    char *reading = skill_text(item, PROGRESS_SKILL_READING);
+    char *listening = skill_text(item, PROGRESS_SKILL_LISTENING);
+    char *text = g_strdup_printf("%d/8 correct (reading %s, listening %s), interval %.0f d, ease %.2f, %s%s",
+                                 correct, reading, listening, item->interval, item->ease, due,
+                                 item->bump > 0 ? ", bumped" : "");
+    g_free(listening);
+    g_free(reading);
     g_free(due);
     return text;
 }
@@ -342,7 +371,9 @@ static void populate(Editor *editor)
         g_free(info);
         gtk_widget_add_css_class(info_label, "dim-label");
         gtk_label_set_xalign(GTK_LABEL(info_label), 0.0f);
-        gtk_label_set_width_chars(GTK_LABEL(info_label), 42);
+        gtk_label_set_width_chars(GTK_LABEL(info_label), 50);
+        gtk_label_set_wrap(GTK_LABEL(info_label), TRUE);
+        gtk_label_set_max_width_chars(GTK_LABEL(info_label), 50);
 
         GtkWidget *bump = gtk_button_new_with_label("Bump");
         g_signal_connect(bump, "clicked", G_CALLBACK(on_bump_clicked), row);
@@ -418,7 +449,7 @@ void progress_editor_open(GtkWindow *parent, Progress *progress, const ProgressE
     gtk_box_append(GTK_BOX(box), scrolled);
     gtk_box_append(GTK_BOX(box), hint);
 
-    GtkWidget *window = new_window(parent, "Edit progress", 1100, 600);
+    GtkWidget *window = new_window(parent, "Edit progress", 1250, 600);
     gtk_window_set_child(GTK_WINDOW(window), box);
     g_object_set_data_full(G_OBJECT(window), "editor", editor, g_free);
 

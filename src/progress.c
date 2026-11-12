@@ -18,6 +18,8 @@
 
 typedef struct {
     guint8 history; /* last 8 results across sessions, bit 0 is the most recent */
+    guint8 skill_history[PROGRESS_SKILL_COUNT]; /* the same per skill */
+    guint8 skill_count[PROGRESS_SKILL_COUNT];   /* answers in skill_history, at most 8 */
     gint64 last_seen;
     double interval; /* days after which the word counts as due again */
     double ease;     /* growth factor of the interval; lower for words that keep going wrong */
@@ -117,7 +119,7 @@ static void load(Progress *progress)
         guint count = g_strv_length(fields);
 
         /* Numbers first, then the five texts. Older files lack the later numbers: ease (since
-         * 4 numbers) and bump (since 5). */
+         * 4 numbers), bump (since 5) and history and count per skill (since 9). */
         guint numbers = count >= 8 ? count - 5 : 0;
         unsigned long long history = numbers > 0 ? g_ascii_strtoull(fields[0], NULL, 10) : 0;
         double interval = numbers > 0 ? g_ascii_strtod(fields[2], NULL) : 0.0;
@@ -133,6 +135,10 @@ static void load(Progress *progress)
         entry->ease = numbers > 3 ? CLAMP(g_ascii_strtod(fields[3], NULL), EASE_MIN, EASE_MAX)
                                   : EASE_DEFAULT;
         entry->bump = numbers > 4 ? MIN(g_ascii_strtoull(fields[4], NULL, 10), BUMP_DAYS) : 0;
+        for (int s = 0; numbers > 8 && s < PROGRESS_SKILL_COUNT; s++) {
+            entry->skill_history[s] = (guint8)MIN(g_ascii_strtoull(fields[5 + 2 * s], NULL, 10), 255);
+            entry->skill_count[s] = (guint8)MIN(g_ascii_strtoull(fields[6 + 2 * s], NULL, 10), 8);
+        }
         entry->source_language = unescape(fields[numbers]);
         entry->target_language = unescape(fields[numbers + 1]);
         entry->source = unescape(fields[numbers + 2]);
@@ -161,9 +167,14 @@ static void save(Progress *progress)
         const Entry *entry = value;
         char *fields[5] = {escape(entry->source_language), escape(entry->target_language),
                            escape(entry->source), escape(entry->target), escape(entry->note)};
-        g_string_append_printf(text, "%u\t%lld\t%g\t%g\t%u\t%s\t%s\t%s\t%s\t%s\n", entry->history,
-                               (long long)entry->last_seen, entry->interval, entry->ease, entry->bump,
-                               fields[0], fields[1], fields[2], fields[3], fields[4]);
+        g_string_append_printf(text, "%u\t%lld\t%g\t%g\t%u\t%u\t%u\t%u\t%u\t%s\t%s\t%s\t%s\t%s\n",
+                               entry->history, (long long)entry->last_seen, entry->interval,
+                               entry->ease, entry->bump,
+                               entry->skill_history[PROGRESS_SKILL_READING],
+                               entry->skill_count[PROGRESS_SKILL_READING],
+                               entry->skill_history[PROGRESS_SKILL_LISTENING],
+                               entry->skill_count[PROGRESS_SKILL_LISTENING], fields[0], fields[1],
+                               fields[2], fields[3], fields[4]);
         for (int i = 0; i < 5; i++)
             g_free(fields[i]);
     }
@@ -195,7 +206,7 @@ void progress_free(Progress *progress)
     g_free(progress);
 }
 
-void progress_record(Progress *progress, const Word *word, gboolean correct)
+void progress_record(Progress *progress, const Word *word, ProgressSkill skill, gboolean correct)
 {
     char *key = word_key(word);
     Entry *entry = g_hash_table_lookup(progress->entries, key);
@@ -226,6 +237,8 @@ void progress_record(Progress *progress, const Word *word, gboolean correct)
         entry->bump--;
 
     entry->history = (guint8)((entry->history << 1) | (correct ? 1 : 0));
+    entry->skill_history[skill] = (guint8)((entry->skill_history[skill] << 1) | (correct ? 1 : 0));
+    entry->skill_count[skill] = MIN(entry->skill_count[skill] + 1, 8);
     entry->last_seen = now;
     progress->dirty = TRUE;
 }
@@ -236,6 +249,24 @@ static const Entry *find_entry(const Progress *progress, const Word *word)
     const Entry *entry = g_hash_table_lookup(progress->entries, key);
     g_free(key);
     return entry;
+}
+
+static double skill_accuracy(const Entry *entry, ProgressSkill skill)
+{
+    int correct = 0;
+    for (int i = 0; i < entry->skill_count[skill]; i++)
+        correct += (entry->skill_history[skill] >> i) & 1;
+    return (double)correct / entry->skill_count[skill];
+}
+
+gboolean progress_skill_accuracy(const Progress *progress, const Word *word, ProgressSkill skill,
+                                 double *accuracy)
+{
+    const Entry *entry = find_entry(progress, word);
+    if (entry == NULL || entry->skill_count[skill] == 0)
+        return FALSE;
+    *accuracy = skill_accuracy(entry, skill);
+    return TRUE;
 }
 
 static double accuracy(const Entry *entry)
@@ -527,6 +558,12 @@ static void add_to_stats(GHashTable *pairs, GPtrArray *result, const Entry *entr
 
     stats->answered++;
     stats->accuracy += correct / 8.0; /* divided by the answered count below */
+    for (int s = 0; s < PROGRESS_SKILL_COUNT; s++) {
+        if (entry->skill_count[s] == 0)
+            continue;
+        stats->skill_answered[s]++;
+        stats->skill_accuracy[s] += skill_accuracy(entry, s);
+    }
     if (entry->interval < KNOWN_INTERVAL_DAYS)
         stats->learning++;
     else
@@ -570,6 +607,9 @@ GPtrArray *progress_pair_stats(const Progress *progress, const WordList *only)
         ProgressStats *stats = &((ProgressPairStats *)g_ptr_array_index(result, i))->stats;
         if (stats->answered > 0)
             stats->accuracy /= stats->answered;
+        for (int s = 0; s < PROGRESS_SKILL_COUNT; s++)
+            if (stats->skill_answered[s] > 0)
+                stats->skill_accuracy[s] /= stats->skill_answered[s];
     }
 
     g_ptr_array_sort(result, compare_pair_stats);
@@ -587,6 +627,8 @@ static ProgressItem *item_from_entry(const char *key, const Entry *entry)
     item->target = g_strdup(entry->target);
     item->note = g_strdup(entry->note);
     item->history = entry->history;
+    memcpy(item->skill_history, entry->skill_history, sizeof item->skill_history);
+    memcpy(item->skill_count, entry->skill_count, sizeof item->skill_count);
     item->last_seen = entry->last_seen;
     item->interval = entry->interval;
     item->ease = entry->ease;
@@ -705,6 +747,8 @@ void progress_reset(Progress *progress, const char *key)
     if (entry == NULL)
         return;
     entry->history = 0;
+    memset(entry->skill_history, 0, sizeof entry->skill_history);
+    memset(entry->skill_count, 0, sizeof entry->skill_count);
     entry->last_seen = 0;
     entry->interval = 1.0;
     entry->ease = EASE_DEFAULT;
