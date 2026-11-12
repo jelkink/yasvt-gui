@@ -81,6 +81,7 @@ This record only decides the **initial order** after opening a file, starting wi
   3. **Other language**: only the same word with another language was answered (Russian→Esperanto *дом / domo* after English→Esperanto *house / domo*).
   4. **New**: none of its words was ever answered, in any direction or language pair.
 - The groups are mixed at fixed rates: by default 30% practised, 25% reverse, 20% other language and 25% new (`--reverse`, `--other`, `--new`). When a group runs out, the next group in priority order fills in.
+- Words you **Bump** in **Edit progress** come first in their group, and so do the words in other directions and language pairs that share a word with them (Russian→Esperanto *дом / domo* after bumping English→Esperanto *house / domo*). A bump wears off once the word has been answered correctly on three different days.
 - Within the practised group, words come first when they are poorly known or due again; well-known words that were seen recently go to the back. The interval before a word is due grows after a correct answer (at most once a day, up to a year) by a per-word ease factor that starts at 2 and drops for words that keep going wrong, so difficult words are reviewed more often. A wrong answer resets the interval to a day. In the reverse and other-language groups, words come sooner the worse you know the related word. New words come in random order. Some randomness keeps the order from being predictable.
 - **Shuffle** ignores the record and shuffles completely at random.
 
@@ -91,7 +92,7 @@ The progress file is plain text, one word per line. Deleting it resets all progr
 ### Statistics and editing
 
 - **Statistics** shows, for the words loaded now that pass the language filter and for everything in your progress, per language pair and in total, how many words are new, learning (review interval under 8 days) or known (8 days or more), how many are due for review, how many you answered today, and your accuracy over the last 8 answers.
-- **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
+- **Edit progress** opens a list of everything in the progress file that you can search. Change a word, its translation or its note and press Enter to save, **Bump** a word to make it the current word right away (adding it to the session if it is not loaded and passes the language filter) and to put it early in the next sessions (see above), **Reset** a word so that it counts as new again, or **Delete** it from your progress. Changes also apply to the words in the running session.
 
 ## Audio
 

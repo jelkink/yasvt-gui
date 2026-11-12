@@ -35,8 +35,8 @@ typedef enum {
     PROGRESS_GROUP_COUNT,
 } ProgressGroup;
 
-/* Initial order: each group is ordered by itself, most due and least known first (new words at
- * random), and the groups are mixed at rates `fractions` (0..1). The practised group's own
+/* Initial order: each group is ordered by itself, bumped words first, then most due and least
+ * known first (new words at random), and the groups are mixed at rates `fractions` (0..1). The practised group's own
  * fraction is ignored: it takes what the others leave. */
 void progress_shuffle(const Progress *progress, WordList *list,
                       const double fractions[PROGRESS_GROUP_COUNT]);
@@ -70,6 +70,7 @@ typedef struct {
     gint64 last_seen; /* 0 when never answered */
     double interval;
     double ease;
+    guint bump; /* days with a correct answer left before the bump wears off; 0 when not bumped */
 } ProgressItem;
 
 void progress_item_free(ProgressItem *item);
@@ -86,5 +87,10 @@ ProgressItem *progress_edit(Progress *progress, const char *key, const char *sou
 /* Both save immediately. Reset makes the word count as new again. */
 void progress_remove(Progress *progress, const char *key);
 void progress_reset(Progress *progress, const char *key);
+
+/* Puts the entry, and the words in other directions or language pairs that share a text with it,
+ * first in their group of the initial order, until it has been answered correctly on three
+ * different days. Saves immediately. */
+void progress_bump(Progress *progress, const char *key);
 
 #endif

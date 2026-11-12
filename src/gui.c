@@ -916,11 +916,31 @@ static void on_progress_removed(gpointer data, const ProgressItem *item)
         show_current_word(app);
 }
 
+/* Makes the word the current one, loading it first if needed. */
+static void on_progress_bumped(gpointer data, const ProgressItem *item)
+{
+    App *app = data;
+    Word *word = find_word(app, item);
+    if (word == NULL) {
+        word = word_new(item->source_language, item->target_language, item->source, item->target,
+                        item->note);
+        g_ptr_array_add(app->all->words, word);
+        rebuild_filter_panel(app);
+    }
+    if (!passes_filter(app, word))
+        return;
+
+    g_ptr_array_remove(app->list->words, word);
+    g_ptr_array_insert(app->list->words, 0, word);
+    show_score(app);
+    show_current_word(app);
+}
+
 static void on_editor_clicked(GtkButton *button, gpointer user_data)
 {
     (void)button;
     App *app = user_data;
-    ProgressEditorHooks hooks = {on_progress_edited, on_progress_removed, app};
+    ProgressEditorHooks hooks = {on_progress_edited, on_progress_removed, on_progress_bumped, app};
     progress_editor_open(app->window, app->progress, &hooks);
 }
 

@@ -14,12 +14,14 @@
 #define EASE_STEP_UP 0.05
 #define EASE_STEP_DOWN 0.2
 #define KNOWN_INTERVAL_DAYS 8.0
+#define BUMP_DAYS 3
 
 typedef struct {
     guint8 history; /* last 8 results across sessions, bit 0 is the most recent */
     gint64 last_seen;
     double interval; /* days after which the word counts as due again */
     double ease;     /* growth factor of the interval; lower for words that keep going wrong */
+    guint bump;      /* days with a correct answer left before a bump wears off */
     char *source_language;
     char *target_language;
     char *source;
@@ -113,19 +115,13 @@ static void load(Progress *progress)
     for (char **line = lines; *line != NULL; line++) {
         char **fields = g_strsplit(*line, "\t", -1);
         guint count = g_strv_length(fields);
-        unsigned long long history = 0;
-        double interval = 0.0;
-        double ease = EASE_DEFAULT;
 
-        /* Files from before the ease factor have 8 fields. */
-        guint shift = count == 9 ? 1 : 0;
-        if (count == 8 || count == 9) {
-            history = g_ascii_strtoull(fields[0], NULL, 10);
-            interval = g_ascii_strtod(fields[2], NULL);
-            if (shift)
-                ease = CLAMP(g_ascii_strtod(fields[3], NULL), EASE_MIN, EASE_MAX);
-        }
-        if ((count != 8 && count != 9) || history > 255 || interval <= 0.0) {
+        /* Numbers first, then the five texts. Older files lack the later numbers: ease (since
+         * 4 numbers) and bump (since 5). */
+        guint numbers = count >= 8 ? count - 5 : 0;
+        unsigned long long history = numbers > 0 ? g_ascii_strtoull(fields[0], NULL, 10) : 0;
+        double interval = numbers > 0 ? g_ascii_strtod(fields[2], NULL) : 0.0;
+        if (numbers < 3 || history > 255 || interval <= 0.0) {
             g_strfreev(fields);
             continue;
         }
@@ -134,12 +130,14 @@ static void load(Progress *progress)
         entry->history = (guint8)history;
         entry->last_seen = g_ascii_strtoll(fields[1], NULL, 10);
         entry->interval = interval;
-        entry->ease = ease;
-        entry->source_language = unescape(fields[3 + shift]);
-        entry->target_language = unescape(fields[4 + shift]);
-        entry->source = unescape(fields[5 + shift]);
-        entry->target = unescape(fields[6 + shift]);
-        entry->note = *fields[7 + shift] != '\0' ? unescape(fields[7 + shift]) : NULL;
+        entry->ease = numbers > 3 ? CLAMP(g_ascii_strtod(fields[3], NULL), EASE_MIN, EASE_MAX)
+                                  : EASE_DEFAULT;
+        entry->bump = numbers > 4 ? MIN(g_ascii_strtoull(fields[4], NULL, 10), BUMP_DAYS) : 0;
+        entry->source_language = unescape(fields[numbers]);
+        entry->target_language = unescape(fields[numbers + 1]);
+        entry->source = unescape(fields[numbers + 2]);
+        entry->target = unescape(fields[numbers + 3]);
+        entry->note = *fields[numbers + 4] != '\0' ? unescape(fields[numbers + 4]) : NULL;
 
         Word *word = word_new(entry->source_language, entry->target_language, entry->source,
                               entry->target, entry->note);
@@ -163,9 +161,9 @@ static void save(Progress *progress)
         const Entry *entry = value;
         char *fields[5] = {escape(entry->source_language), escape(entry->target_language),
                            escape(entry->source), escape(entry->target), escape(entry->note)};
-        g_string_append_printf(text, "%u\t%lld\t%g\t%g\t%s\t%s\t%s\t%s\t%s\n", entry->history,
-                               (long long)entry->last_seen, entry->interval, entry->ease, fields[0],
-                               fields[1], fields[2], fields[3], fields[4]);
+        g_string_append_printf(text, "%u\t%lld\t%g\t%g\t%u\t%s\t%s\t%s\t%s\t%s\n", entry->history,
+                               (long long)entry->last_seen, entry->interval, entry->ease, entry->bump,
+                               fields[0], fields[1], fields[2], fields[3], fields[4]);
         for (int i = 0; i < 5; i++)
             g_free(fields[i]);
     }
@@ -224,6 +222,8 @@ void progress_record(Progress *progress, const Word *word, gboolean correct)
         entry->interval = MIN(MAX(entry->interval * entry->ease, 1.0), MAX_INTERVAL_DAYS);
         entry->ease = MIN(entry->ease + EASE_STEP_UP, EASE_MAX);
     }
+    if (correct && new_day && entry->bump > 0)
+        entry->bump--;
 
     entry->history = (guint8)((entry->history << 1) | (correct ? 1 : 0));
     entry->last_seen = now;
@@ -298,6 +298,37 @@ static GHashTable *practised_texts(const Progress *progress)
         add_practised_text(texts, entry->target_language, entry->target, w);
     }
     return texts;
+}
+
+/* Every text, per language, of the bumped entries. */
+static GHashTable *bumped_texts(const Progress *progress)
+{
+    GHashTable *texts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    GHashTableIter iter;
+    gpointer value;
+
+    g_hash_table_iter_init(&iter, progress->entries);
+    while (g_hash_table_iter_next(&iter, NULL, &value)) {
+        const Entry *entry = value;
+        if (entry->bump == 0)
+            continue;
+        g_hash_table_add(texts, text_key(entry->source_language, entry->source));
+        g_hash_table_add(texts, text_key(entry->target_language, entry->target));
+    }
+    return texts;
+}
+
+/* Whether the word, or another one sharing a text with it, was bumped. */
+static gboolean is_bumped(GHashTable *bumped, const Word *word)
+{
+    if (g_hash_table_size(bumped) == 0)
+        return FALSE;
+    char *source = text_key(word->source_language, word->source);
+    char *target = text_key(word->target_language, word->target);
+    gboolean result = g_hash_table_contains(bumped, source) || g_hash_table_contains(bumped, target);
+    g_free(target);
+    g_free(source);
+    return result;
 }
 
 /* The weight of a word never answered itself, or 0 when none of its texts was practised. */
@@ -376,6 +407,7 @@ void progress_shuffle(const Progress *progress, WordList *list,
     for (int g = 0; g < PROGRESS_GROUP_COUNT; g++)
         groups[g] = g_new(Keyed, count);
     GHashTable *texts = practised_texts(progress);
+    GHashTable *bumped = bumped_texts(progress);
 
     for (guint i = 0; i < count; i++) {
         Word *word = g_ptr_array_index(list->words, i);
@@ -405,8 +437,12 @@ void progress_shuffle(const Progress *progress, WordList *list,
         w *= g_random_double_range(0.5, 1.5);
         groups[group][sizes[group]].word = word;
         groups[group][sizes[group]].key = pow(g_random_double(), 1.0 / w);
+        /* Bumped words, and words sharing a text with them, go first in their group. */
+        if (is_bumped(bumped, word))
+            groups[group][sizes[group]].key += 1.0;
         sizes[group]++;
     }
+    g_hash_table_unref(bumped);
     g_hash_table_unref(texts);
 
     for (int g = 0; g < PROGRESS_GROUP_COUNT; g++)
@@ -554,6 +590,7 @@ static ProgressItem *item_from_entry(const char *key, const Entry *entry)
     item->last_seen = entry->last_seen;
     item->interval = entry->interval;
     item->ease = entry->ease;
+    item->bump = entry->bump;
     return item;
 }
 
@@ -671,5 +708,15 @@ void progress_reset(Progress *progress, const char *key)
     entry->last_seen = 0;
     entry->interval = 1.0;
     entry->ease = EASE_DEFAULT;
+    entry->bump = 0;
+    save(progress);
+}
+
+void progress_bump(Progress *progress, const char *key)
+{
+    Entry *entry = g_hash_table_lookup(progress->entries, key);
+    if (entry == NULL)
+        return;
+    entry->bump = BUMP_DAYS;
     save(progress);
 }

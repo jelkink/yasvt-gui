@@ -9,6 +9,7 @@
 typedef struct {
     void (*edited)(gpointer data, const ProgressItem *before, const ProgressItem *after);
     void (*removed)(gpointer data, const ProgressItem *item);
+    void (*bumped)(gpointer data, const ProgressItem *item);
     gpointer data;
 } ProgressEditorHooks;
 

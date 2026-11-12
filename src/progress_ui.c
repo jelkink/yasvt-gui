@@ -192,7 +192,7 @@ static void row_free(gpointer data)
 static char *info_text(const ProgressItem *item)
 {
     if (item->last_seen == 0)
-        return g_strdup("never answered");
+        return g_strdup(item->bump > 0 ? "never answered, bumped" : "never answered");
 
     int correct = 0;
     for (int i = 0; i < 8; i++)
@@ -200,8 +200,8 @@ static char *info_text(const ProgressItem *item)
 
     double days_left = item->interval - (double)(g_get_real_time() / G_USEC_PER_SEC - item->last_seen) / SECONDS_PER_DAY;
     char *due = days_left <= 0.0 ? g_strdup("due") : g_strdup_printf("due in %.0f d", ceil(days_left));
-    char *text = g_strdup_printf("%d/8 correct, interval %.0f d, ease %.2f, %s", correct,
-                                 item->interval, item->ease, due);
+    char *text = g_strdup_printf("%d/8 correct, interval %.0f d, ease %.2f, %s%s", correct,
+                                 item->interval, item->ease, due, item->bump > 0 ? ", bumped" : "");
     g_free(due);
     return text;
 }
@@ -264,6 +264,18 @@ static void on_reset_clicked(GtkButton *button, gpointer user_data)
     Editor *editor = row->editor;
     progress_reset(editor->progress, row->item->key);
     populate(editor);
+}
+
+static void on_bump_clicked(GtkButton *button, gpointer user_data)
+{
+    (void)button;
+    Row *row = user_data;
+    Editor *editor = row->editor;
+    progress_bump(editor->progress, row->item->key);
+    if (editor->hooks.bumped != NULL)
+        editor->hooks.bumped(editor->hooks.data, row->item);
+    populate(editor);
+    gtk_label_set_text(GTK_LABEL(editor->status), "Bumped.");
 }
 
 static void on_delete_clicked(GtkButton *button, gpointer user_data)
@@ -330,8 +342,10 @@ static void populate(Editor *editor)
         g_free(info);
         gtk_widget_add_css_class(info_label, "dim-label");
         gtk_label_set_xalign(GTK_LABEL(info_label), 0.0f);
-        gtk_label_set_width_chars(GTK_LABEL(info_label), 34);
+        gtk_label_set_width_chars(GTK_LABEL(info_label), 42);
 
+        GtkWidget *bump = gtk_button_new_with_label("Bump");
+        g_signal_connect(bump, "clicked", G_CALLBACK(on_bump_clicked), row);
         GtkWidget *reset = gtk_button_new_with_label("Reset");
         g_signal_connect(reset, "clicked", G_CALLBACK(on_reset_clicked), row);
         GtkWidget *delete_button = gtk_button_new_with_label("Delete");
@@ -342,6 +356,7 @@ static void populate(Editor *editor)
         gtk_box_append(GTK_BOX(box), row->target_entry);
         gtk_box_append(GTK_BOX(box), row->note_entry);
         gtk_box_append(GTK_BOX(box), info_label);
+        gtk_box_append(GTK_BOX(box), bump);
         gtk_box_append(GTK_BOX(box), reset);
         gtk_box_append(GTK_BOX(box), delete_button);
 
@@ -387,8 +402,10 @@ void progress_editor_open(GtkWindow *parent, Progress *progress, const ProgressE
     gtk_widget_set_vexpand(scrolled, TRUE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), editor->list);
 
-    GtkWidget *hint = gtk_label_new("Edit a text and press Enter to save. Reset makes a word count as new "
-                                    "again; Delete removes it from your progress.");
+    GtkWidget *hint = gtk_label_new("Edit a text and press Enter to save. Bump puts a word first now and "
+                                    "early in the next sessions, also in other languages; Reset makes it "
+                                    "count as new again; Delete removes it from your progress.");
+    gtk_label_set_wrap(GTK_LABEL(hint), TRUE);
     gtk_widget_add_css_class(hint, "dim-label");
     gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
 
